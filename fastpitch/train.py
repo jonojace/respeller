@@ -503,9 +503,9 @@ def train(rank, args):
 
     if args.distributed_run:
         model = DistributedDataParallel(
-            model, device_ids=[args.local_rank], output_device=args.local_rank)
-            #find_unused_parameters=True)
-
+            model, device_ids=[args.local_rank], output_device=args.local_rank,
+            # find_unused_parameters=True,  # for debugging 'module has parameters that were not used in producing loss'
+        )
     start_epoch = [1]
     start_iter = [0]
 
@@ -627,7 +627,9 @@ def train(rank, args):
             x, y, num_frames = batch_to_gpu(batch, args.input_type, args.use_mas)
 
             with autocast(enabled=args.amp):
-                y_pred = model(x, use_gt_durations=True)
+                y_pred = model(x, use_gt_durations=True) # if using MAS, use_gt_durations has no effect
+                # Fastpitch.forward_mas() doesn't use it
+
                 loss, meta = criterion(y_pred, y)
                 
                 if args.use_mas:
