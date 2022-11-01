@@ -639,7 +639,7 @@ def train(rank, args):
                         kl_weight = min((epoch - args.kl_loss_start_epoch) / args.kl_loss_warmup_epochs,
                                         1.0) * args.kl_loss_weight
                         meta['kl_loss'] = binarization_loss.clone().detach() * kl_weight
-                        meta['kl_weight'] = kl_weight
+                        meta['kl_weight'] = torch.tensor(kl_weight).cuda().detach()
                         loss += kl_weight * binarization_loss
                     else:
                         meta['kl_loss'] = torch.zeros_like(loss)
