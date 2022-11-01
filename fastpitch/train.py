@@ -155,8 +155,6 @@ def parse_args(parser):
 
 
 def reduce_tensor(tensor, num_gpus):
-    print('hello world4 !!!')
-    print(type(tensor))
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
     return rt.true_divide(num_gpus)
