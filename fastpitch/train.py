@@ -658,6 +658,12 @@ def train(rank, args):
             else:
                 loss.backward()
 
+
+            # for debugging
+            # for name, param in model.named_parameters():
+            #     if param.grad is None:
+            #         print(name, param.size(), param.data)
+
             if args.distributed_run:
                 reduced_loss = reduce_tensor(loss.data, args.num_gpus).item()
                 reduced_num_frames = reduce_tensor(num_frames.data, 1).item()
