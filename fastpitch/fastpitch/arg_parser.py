@@ -53,6 +53,11 @@ def parse_fastpitch_args(parent, add_help=False):
                       help='Use depthwise separable convolutions')
     arch.add_argument('--use-mas', action='store_true',
                       help='Train with monotonic alignment search')
+    arch.add_argument('--add-spaces', action='store_true',
+                      help='insert additional space characters at the beginning and '
+                           'end of your text transcripts to represent any leading or '
+                           'trailing silence in the audio (especially if using monotonic '
+                           'alignment search for duration targets)')
 
     in_fft = parser.add_argument_group('input FFT parameters')
     in_fft.add_argument('--in-fft-n-layers', default=6, type=int,
