@@ -28,8 +28,18 @@
 import torch
 import torch.nn.functional as F
 from librosa.filters import mel as librosa_mel_fn
-from common.audio_processing import dynamic_range_compression, dynamic_range_decompression
-from common.stft import STFT
+import os
+
+cwd = os.getcwd()
+folder = cwd.split('/')[-1]
+if folder == "respeller":
+    # training respeller
+    from fastpitch.common.audio_processing import dynamic_range_compression, dynamic_range_decompression
+    from fastpitch.common.stft import STFT
+elif folder == "fastpitch":
+    # training fastpitch
+    from common.audio_processing import dynamic_range_compression, dynamic_range_decompression
+    from common.stft import STFT
 
 
 class LinearNorm(torch.nn.Module):

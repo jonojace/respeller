@@ -1,9 +1,6 @@
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn import TransformerEncoder, TransformerEncoderLayer, LayerNorm, Linear
-from gumbel_vector_quantizer import GumbelVectorQuantizer
+from torch.nn import TransformerEncoder, TransformerEncoderLayer, LayerNorm
 
 # class EncoderDecoderRespeller(nn.Module):
 #     def __init__(self):

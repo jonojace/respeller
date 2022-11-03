@@ -26,24 +26,41 @@
 # *****************************************************************************
 
 import json
+import os
 import sys
 from typing import Optional
 from os.path import abspath, dirname
 
 import torch
 
-from common.text.symbols import get_symbols, get_pad_idx
-from fastpitch.model import FastPitch
-from hifigan import AttrDict
-from hifigan.model import Generator as HiFiGanGenerator
+cwd = os.getcwd()
+folder = cwd.split('/')[-1]
+if folder == "respeller":
+    # training respeller
+    from fastpitch.common.text.symbols import get_symbols, get_pad_idx
+    from fastpitch.fastpitch.model import FastPitch
+    from fastpitch.hifigan import AttrDict
+    from fastpitch.hifigan.model import Generator as HiFiGanGenerator
+elif folder == "fastpitch":
+    # training fastpitch
+    from common.text.symbols import get_symbols, get_pad_idx
+    from fastpitch.model import FastPitch
+    from hifigan import AttrDict
+    from hifigan.model import Generator as HiFiGanGenerator
 
 
 def parse_model_args(model_name, parser, add_help=False):
     if model_name == 'FastPitch':
-        from fastpitch.arg_parser import parse_fastpitch_args
+        if folder == "respeller":
+            from fastpitch.fastpitch.arg_parser import parse_fastpitch_args
+        elif folder == "fastpitch":
+            from fastpitch.arg_parser import parse_fastpitch_args
         return parse_fastpitch_args(parser, add_help)
     elif model_name == 'HiFi-GAN':
-        from hifigan.arg_parser import parse_hifigan_args
+        if folder == "respeller":
+            from fastpitch.hifigan.arg_parser import parse_hifigan_args
+        elif folder == "fastpitch":
+            from hifigan.arg_parser import parse_hifigan_args
         return parse_hifigan_args(parser, add_help)
     else:
         raise NotImplementedError(model_name)

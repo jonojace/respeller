@@ -36,7 +36,16 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from scipy.signal import get_window
 from librosa.util import pad_center, tiny
-from common.audio_processing import window_sumsquare
+import os
+
+cwd = os.getcwd()
+folder = cwd.split('/')[-1]
+if folder == "respeller":
+    # training respeller
+    from fastpitch.common.audio_processing import window_sumsquare
+elif folder == "fastpitch":
+    # training fastpitch
+    from common.audio_processing import window_sumsquare
 
 
 class STFT(torch.nn.Module):

@@ -29,12 +29,26 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 
-from common.layers import ConvReLUNorm, SeparableConv
-from common.utils import mask_from_lens
-from fastpitch.alignment import mas_width1
-from fastpitch.attention import ConvAttention
-from fastpitch.transformer import FFTransformer
+cwd = os.getcwd()
+folder = cwd.split('/')[-1]
+if folder == "respeller":
+    # training respeller
+    from fastpitch.common.layers import ConvReLUNorm, SeparableConv
+    from fastpitch.common.utils import mask_from_lens
+    from fastpitch.fastpitch.alignment import mas_width1
+    from fastpitch.fastpitch.attention import ConvAttention
+    from fastpitch.fastpitch.transformer import FFTransformer
+elif folder == "fastpitch":
+    # training fastpitch
+    from common.layers import ConvReLUNorm, SeparableConv
+    from common.utils import mask_from_lens
+    from fastpitch.alignment import mas_width1
+    from fastpitch.attention import ConvAttention
+    from fastpitch.transformer import FFTransformer
+
+
 
 
 def regulate_len(durations, enc_out, pace=1.0, mel_max_len=None):

@@ -15,9 +15,18 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 
-from common.layers import SeparableConv
-from common.utils import mask_from_lens
+cwd = os.getcwd()
+folder = cwd.split('/')[-1]
+if folder == "respeller":
+    # training respeller
+    from fastpitch.common.layers import SeparableConv
+    from fastpitch.common.utils import mask_from_lens
+elif folder == "fastpitch":
+    # training fastpitch
+    from common.layers import SeparableConv
+    from common.utils import mask_from_lens
 
 
 class PositionalEmbedding(nn.Module):

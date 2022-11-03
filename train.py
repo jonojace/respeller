@@ -18,12 +18,25 @@ from modules.gumbel_vector_quantizer import GumbelVectorQuantizer
 
 def parse_args(parser):
     """Parse commandline arguments"""
-    parser.add_argument('-o', '--output', type=str, required=True,
-                        help='Directory to save checkpoints')
+    # parser.add_argument('-o', '--output', type=str, required=True,
+    #                     help='Directory to save checkpoints')
     parser.add_argument('-d', '--dataset-path', type=str, default='./',
                         help='Path to dataset')
 
     train_args = parser.add_argument_group('training setup')
+    train_args.add_argument('--cuda', type=bool, default=True,
+                      help='Enable GPU training')
+    train_args.add_argument('--batch-size', type=int, default=16,
+                      help='Batchsize (this is divided by number of GPUs if running Data Distributed Parallel Training)')
+    train_args.add_argument('--seed', type=int, default=1337,
+                       help='Seed for PyTorch random number generators')
+    train_args.add_argument('--grad-accumulation', type=int, default=1,
+                       help='Training steps to accumulate gradients for')
+    train_args.add_argument('--epochs', type=int, default=100, #required=True,
+                       help='Number of total epochs to run')
+    train_args.add_argument('--epochs-per-checkpoint', type=int, default=10,
+                       help='Number of epochs per checkpoint')
+
     data_args = parser.add_argument_group('dataset parameters')
     cond_args = parser.add_argument_group('conditioning on additional attributes')
     audio_args = parser.add_argument_group('log generated audio')
@@ -38,8 +51,21 @@ def parse_args(parser):
     pretrained_tts_args = parser.add_argument_group('pretrained tts model')
     pretrained_tts_args.add_argument('--fastpitch-with-mas', type=bool, default=True,
                       help='Whether or not fastpitch was trained with Monotonic Alignment Search (MAS)')
-    pretrained_tts_args.add_argument('--fastpitch-checkpoint', type=str, required=True,
+    pretrained_tts_args.add_argument('--fastpitch-chkpt', type=str, required=True,
                       help='Path to pretrained fastpitch checkpoint')
+    # pretrained_tts_args.add_argument('--input-type', type=str, default='char',
+    #                   choices=['char', 'phone', 'pf', 'unit'],
+    #                   help='Input symbols used, either char (text), phone, pf '
+    #                   '(phonological feature vectors) or unit (quantized acoustic '
+    #                   'representation IDs)')
+    # pretrained_tts_args.add_argument('--fastpitch-symbol-set', type=str, default='english_basic_lowercase',
+    #                   help='Define symbol set for input sequences. For quantized '
+    #                   'unit inputs, pass the size of the vocabulary.')
+    # pretrained_tts_args.add_argument('--fastpitch-n-speakers', type=int, default=1,
+    #                   help='Condition on speaker, value > 1 enables trainable '
+    #                   'speaker embeddings.')
+    # pretrained_tts_args.add_argument('--fastpitch-use-sepconv', type=bool, default=True,
+    #                   help='Use depthwise separable convolutions')
 
     return parser
 
@@ -47,20 +73,29 @@ def load_checkpoint(args, model, filepath):
     if args.local_rank == 0:
         print(f'Loading model and optimizer state from {filepath}')
     checkpoint = torch.load(filepath, map_location='cpu')
-
     sd = {k.replace('module.', ''): v
           for k, v in checkpoint['state_dict'].items()}
     getattr(model, 'module', model).load_state_dict(sd)
+    return model
+
+def freeze_weights(model):
+    # NB wait... won't this stop backprop of gradients?
+    # We just don't want to add the fastpitch model weights to the optimiser...
+    for param in model.parameters():
+        param.requires_grad = False
 
 def load_pretrained_fastpitch(args):
+    print('DEBUG', args)
     device = torch.device('cuda' if args.cuda else 'cpu')
     model_config = fastpitch_model.get_model_config('FastPitch', args)
-    tts = fastpitch_model.get_model('FastPitch', model_config, device, forward_mas=args.fastpitch_with_mas)
-    tts = load_checkpoint(args, tts, args.fastpitch_checkpoint)
-    tts = convert_embedding_table_to_linear_layer(tts)
-    tts.freeze_weights()
-    vocab_size = len(tts.input_symbols)
-    grapheme_embedding_dim = tts.embedding.size()[0]
+    fastpitch = fastpitch_model.get_model('FastPitch', model_config, device, forward_mas=args.fastpitch_with_mas)
+    load_checkpoint(args, fastpitch, args.fastpitch_chkpt)
+    freeze_weights(fastpitch)
+
+    # tts = convert_embedding_table_to_linear_layer(tts)
+
+    vocab_size = len(fastpitch.input_symbols)
+    grapheme_embedding_dim = fastpitch.embedding.size()[0]
     return fastpitch, vocab_size, grapheme_embedding_dim
 
 def train(rank, args):
@@ -100,7 +135,7 @@ def train(rank, args):
         ###############################################################################################################
         # forward pass
         logits = respeller(inputs)
-        respelling = quantiser(logits)
+        respelling = quantiser(logits, produce_targets=False)["x"]
         log_mel = tts(respelling)
 
         ###############################################################################################################
