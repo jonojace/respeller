@@ -34,13 +34,15 @@ def get_symbols(symbol_set='english_basic', symbol_type=None):
         _punctuation = '!\'(),.:;? '
         _special = '-'
         _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-        symbols = list(_pad + _special + _punctuation + _letters) + _arpabet
+        _eos = '$'
+        symbols = list(_pad + _special + _punctuation + _letters + _eos) + _arpabet
     elif symbol_set == 'english_basic_lowercase':
         _pad = '_'
         _punctuation = '!\'"(),.:;? '
         _special = '-'
         _letters = 'abcdefghijklmnopqrstuvwxyz'
-        symbols = list(_pad + _special + _punctuation + _letters) + _arpabet
+        _eos = '$'
+        symbols = list(_pad + _special + _punctuation + _letters + _eos) + _arpabet
     elif symbol_set == 'english_expanded':
         _pad = '_'
         _punctuation = '!\'",.:;? '

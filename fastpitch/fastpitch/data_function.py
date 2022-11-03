@@ -43,7 +43,7 @@ class TextMelAliLoader(torch.utils.data.Dataset):
                  input_type='char', symbol_set='english_basic', n_speakers=1,
                  load_mel_from_disk=True, max_wav_value=None, sampling_rate=None,
                  filter_length=None, hop_length=None, win_length=None,
-                 mel_fmin=None, mel_fmax=None, peak_norm=False, add_spaces=False, **kwargs):
+                 mel_fmin=None, mel_fmax=None, peak_norm=False, add_spaces=False, eos_symbol=' ', **kwargs):
         self.audiopaths_and_text = load_filepaths_and_text(
             dataset_path, audiopaths_and_text,
             has_speakers=(n_speakers > 1))
@@ -53,7 +53,7 @@ class TextMelAliLoader(torch.utils.data.Dataset):
         self.symbol_set = symbol_set
         self.text_cleaners = text_cleaners
         if self.input_type == 'char':
-            self.tp = TextProcessor(self.symbol_set, self.text_cleaners, add_spaces=add_spaces)
+            self.tp = TextProcessor(self.symbol_set, self.text_cleaners, add_spaces=add_spaces, eos_symbol=eos_symbol)
         elif self.input_type == 'unit':
             self.tp = UnitProcessor(self.symbol_set, self.input_type, add_spaces=add_spaces)
         else:

@@ -96,12 +96,13 @@ class UnitProcessor(object):
 # add_spaces and skip_spaces here
 class TextProcessor(object):
     def __init__(self, symbol_set, cleaner_names, handle_sil=False,
-                 add_spaces=False, skip_spaces=False):
+                 add_spaces=False, skip_spaces=False, eos_symbol=' '):
         self.symbols = get_symbols(symbol_set)
         self.cleaner_names = cleaner_names
         self.add_spaces = add_spaces
         self.skip_spaces = skip_spaces
         self.handle_sil = handle_sil
+        self.eos_symbol = eos_symbol
         self.sil_symbols = ['sil', 'sp', 'spn']
 
         # Mappings from symbol to numeric ID and vice versa:
@@ -161,7 +162,7 @@ class TextProcessor(object):
         # add leading and trailing space to text transcript, e.g. to
         # represent silences if not referencing forced alignments
         if self.add_spaces:
-            text = ' ' + text + ' '
+            text = ' ' + text + self.eos_symbol
         # match character-level TextGrids which don't align spaces
         if self.skip_spaces:
             text = [i for i in text if i != ' ']

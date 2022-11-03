@@ -47,17 +47,21 @@ def parse_fastpitch_args(parent, add_help=False):
                          help='Index of padding symbol in dictionary')
     symbols.add_argument('--symbols-embedding-dim', default=384, type=int,
                          help='Input embedding dimension')
+    symbols.add_argument('--add-spaces', action='store_true',
+                      help='insert additional space characters at the beginning and '
+                           'end of your text transcripts to represent any leading or '
+                           'trailing silence in the audio (especially if using monotonic '
+                           'alignment search for duration targets)')
+    symbols.add_argument('--eos-symbol', default=' ', type=str,
+                         help='Only applicable when --add-spaces set to True.'
+                              'Symbol to postpend each utterance text with.')
 
     arch = parser.add_argument_group('model-wide architecture parameters')
     arch.add_argument('--use-sepconv', action='store_true',
                       help='Use depthwise separable convolutions')
     arch.add_argument('--use-mas', action='store_true',
                       help='Train with monotonic alignment search')
-    arch.add_argument('--add-spaces', action='store_true',
-                      help='insert additional space characters at the beginning and '
-                           'end of your text transcripts to represent any leading or '
-                           'trailing silence in the audio (especially if using monotonic '
-                           'alignment search for duration targets)')
+
 
     in_fft = parser.add_argument_group('input FFT parameters')
     in_fft.add_argument('--in-fft-n-layers', default=6, type=int,
