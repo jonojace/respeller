@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import TransformerEncoder, TransformerEncoderLayer, LayerNorm
+from torch.nn import TransformerEncoder, TransformerEncoderLayer, LayerNorm, Linear
 from gumbel_vector_quantizer import GumbelVectorQuantizer
 
 # class EncoderDecoderRespeller(nn.Module):
@@ -14,8 +14,7 @@ from gumbel_vector_quantizer import GumbelVectorQuantizer
 class EncoderRespeller(nn.Module):
     def __init__(
             self,
-            vocab_size,
-            embedding_dim=128,
+            in_vocab_size,
             d_model=512,
             nhead=4,
             num_layers=4,
@@ -24,7 +23,7 @@ class EncoderRespeller(nn.Module):
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.embedding = nn.Embedding(in_vocab_size, d_model)
 
         if pretrained_embedding_table is not None:
             initialise_embedding_table(self.embedding, pretrained_embedding_table)
@@ -32,7 +31,7 @@ class EncoderRespeller(nn.Module):
                 # freeze_embedding_table.freeze_weights()
                 raise NotImplementedError
 
-        self.pos_encoder = PositionalEncoding(embedding_dim)
+        self.pos_encoder = PositionalEncoding(d_model)
         encoder_layer = TransformerEncoderLayer(
             d_model,
             nhead,
@@ -44,11 +43,13 @@ class EncoderRespeller(nn.Module):
             num_layers,
             norm=encoder_norm,
         )
+        # self.linear = Linear(d_model, out_vocab_size)
 
     def forward(self, inputs):
         inputs = self.embedding(inputs)
         inputs = self.pos_encoder(inputs)
         logits = self.encoder(inputs)
+        # logits = self.linear(inputs)
         return logits
 
 class PositionalEncoding(nn.Module):

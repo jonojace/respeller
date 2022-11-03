@@ -7,31 +7,45 @@ into a simpler form
 Intermediated respellings are discrete character sequences
 We can backpropagate through these using gumbel softmax and the straight through estimator
 '''
-
-from modules.model import Respeller
+import argparse
+from modules.model import EncoderRespeller
 from modules.gumbel_vector_quantizer import GumbelVectorQuantizer
 
-def train():
-    tts = load_fastpitch()
+def parse_args(parser):
+    """Parse commandline arguments"""
+    parser.add_argument('-o', '--output', type=str, required=True,
+                        help='Directory to save checkpoints')
+    parser.add_argument('-d', '--dataset-path', type=str, default='./',
+                        help='Path to dataset')
+
+    arch = parser.add_argument_group('architecture')
+    train.add_argument('--d-model', type=int, required=True,
+                       help='Hidden dimension of tranformer')
+    train.add_argument('--latent-temp', type=tuple, default=(2, 0.5, 0.999995),
+                       help='Temperature annealling parameters for Gumbel-Softmax (start, end, decay)')
+
+def load_pretrained_fastpitch(chkpt_path):
     tts = convert_embedding_table_to_linear_layer(tts)
     tts.freeze_weights()
+    vocab_size = len(tts.input_symbols)
+    grapheme_embedding_dim = tts.embedding.size()[0]
+    return fastpitch
+
+def train(args):
+    tts, vocab_size, grapheme_embedding_dim = load_pretrained_fastpitch(args.fastpitch_checkpoint)
 
     if 'modeltype' == 'autoregressive':
-        respeller = EncoderDecoderRespeller(out_dim=len(tts.input_symbols))
+        raise NotImplementedError
     elif 'modeltype' == 'non_autoregressive':
-        respeller = EncoderRespeller(out_dim=len(tts.input_symbols))
+        respeller = EncoderRespeller(in_vocab_size=vocab_size, d_model=args.d_model)
 
     quantiser = GumbelVectorQuantizer(
-        dim=self.decoder.outdim,
-        num_vars=cfg.latent_vars,  # 320 - number of latent variables V in each group of the codebook
-        temp=cfg.latent_temp, # (2, 0.5, 0.999995) - temperature for latent variable sampling. can be tuple of 3 values (start, end, decay)
-        groups=cfg.latent_groups,  # 2 - number of groups G of latent variables in the codebook
-        combine_groups=False,
-        vq_dim=vq_dim,
-        time_first=True,
-        weight_proj_depth=cfg.quantizer_depth,
-        weight_proj_factor=cfg.quantizer_factor,
+        dim=args.d_model, # input dimension to model, will get recast by linear layer to groups * num_vars
+        num_vars=vocab_size,  # number of codebook entries
+        temp=args.latent_temp,
+        embedding_dim=grapheme_embedding_dim,
     )
+    quantiser.init_embedding_weights(tts.embedding)
 
     acoustic_loss_fn = Softdtw()
 
@@ -71,3 +85,14 @@ def train():
 
         ###############################################################################################################
         # validation set evaluation
+
+def main():
+    parser = argparse.ArgumentParser(description='PyTorch FastPitch Training',
+                                     allow_abbrev=False)
+    parser = parse_args(parser)
+    args, _ = parser.parse_known_args()
+
+    train(args)
+
+if __name__ == '__main__':
+    main()

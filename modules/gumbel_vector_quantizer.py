@@ -14,10 +14,10 @@ class GumbelVectorQuantizer(nn.Module):
         dim,
         num_vars,
         temp,
-        groups,
-        combine_groups,
-        vq_dim,
-        time_first,
+        embedding_dim,
+        time_first=True,
+        groups=1,
+        combine_groups=False,
         activation=nn.GELU(),
         weight_proj_depth=1,
         weight_proj_factor=1,
@@ -30,7 +30,7 @@ class GumbelVectorQuantizer(nn.Module):
             temp: temperature for training. this should be a tuple of 3 elements: (start, stop, decay factor)
             groups: number of groups for vector quantization
             combine_groups: whether to use the vectors for all groups
-            vq_dim: dimensionality of the resulting quantized vector
+            embedding_dim: dimensionality of the resulting quantized vector
             time_first: if true, expect input in BxTxC format, otherwise in BxCxT
             activation: what activation to use (should be a module). this is only used if weight_proj_depth is > 1
             weight_proj_depth: number of layers (with activation in between) to project input before computing logits
@@ -46,10 +46,10 @@ class GumbelVectorQuantizer(nn.Module):
         self.time_first = time_first
 
         assert (
-            vq_dim % groups == 0
-        ), f"dim {vq_dim} must be divisible by groups {groups} for concatenation"
+            embedding_dim % groups == 0
+        ), f"dim {embedding_dim} must be divisible by groups {groups} for concatenation"
 
-        var_dim = vq_dim // groups
+        var_dim = embedding_dim // groups
         num_groups = groups if not combine_groups else 1
 
         self.vars = nn.Parameter(torch.FloatTensor(1, num_groups * num_vars, var_dim))
