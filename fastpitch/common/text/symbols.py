@@ -43,6 +43,13 @@ def get_symbols(symbol_set='english_basic', symbol_type=None):
         _letters = 'abcdefghijklmnopqrstuvwxyz'
         _eos = '$'
         symbols = list(_pad + _special + _punctuation + _letters + _eos) + _arpabet
+    elif symbol_set == 'english_basic_lowercase_no_arpabet':
+        _pad = '_'
+        _punctuation = '!\'"(),.:;? '
+        _special = '-'
+        _letters = 'abcdefghijklmnopqrstuvwxyz'
+        _eos = '$'
+        symbols = list(_pad + _special + _punctuation + _letters + _eos)
     elif symbol_set == 'english_expanded':
         _pad = '_'
         _punctuation = '!\'",.:;? '

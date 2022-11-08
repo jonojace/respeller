@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer, LayerNorm
+import math
 
 # class EncoderDecoderRespeller(nn.Module):
 #     def __init__(self):
@@ -11,16 +12,18 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer, LayerNorm
 class EncoderRespeller(nn.Module):
     def __init__(
             self,
-            in_vocab_size,
+            n_symbols,
             d_model=512,
             nhead=4,
             num_layers=4,
             pretrained_embedding_table=None, # optional - initialise from pretrained grapheme embedding table from TTS
             freeze_embedding_table=False,
+            batch_first=True,
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
-        self.embedding = nn.Embedding(in_vocab_size, d_model)
+        self.embedding = nn.Embedding(n_symbols, d_model)
+        self.batch_first = batch_first
 
         if pretrained_embedding_table is not None:
             initialise_embedding_table(self.embedding, pretrained_embedding_table)
@@ -32,7 +35,7 @@ class EncoderRespeller(nn.Module):
         encoder_layer = TransformerEncoderLayer(
             d_model,
             nhead,
-            batch_first=True,
+            batch_first=batch_first,
         )
         encoder_norm = LayerNorm(d_model)
         self.encoder = TransformerEncoder(
@@ -43,9 +46,17 @@ class EncoderRespeller(nn.Module):
         # self.linear = Linear(d_model, out_vocab_size)
 
     def forward(self, inputs):
+        print(f"1: before embed {inputs.size()=}")
         inputs = self.embedding(inputs)
+        print(f"2: after embed {inputs.size()=}")
+        if self.batch_first:
+            inputs = inputs.transpose(0,1)
         inputs = self.pos_encoder(inputs)
+        if self.batch_first:
+            inputs = inputs.transpose(0,1)
+        print(f"3: after pos encoder {inputs.size()=}")
         logits = self.encoder(inputs)
+        print(f"4: after ff transformer {logits.size()=}")
         # logits = self.linear(inputs)
         return logits
 

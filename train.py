@@ -24,7 +24,7 @@ def parse_args(parser):
                         help='Path to dataset')
 
     train_args = parser.add_argument_group('training setup')
-    train_args.add_argument('--cuda', type=bool, default=True,
+    train_args.add_argument('--cuda', action='store_true',
                       help='Enable GPU training')
     train_args.add_argument('--batch-size', type=int, default=16,
                       help='Batchsize (this is divided by number of GPUs if running Data Distributed Parallel Training)')
@@ -49,22 +49,22 @@ def parse_args(parser):
                        help='Temperature annealling parameters for Gumbel-Softmax (start, end, decay)')
 
     pretrained_tts_args = parser.add_argument_group('pretrained tts model')
-    pretrained_tts_args.add_argument('--fastpitch-with-mas', type=bool, default=True,
-                      help='Whether or not fastpitch was trained with Monotonic Alignment Search (MAS)')
+    # pretrained_tts_args.add_argument('--fastpitch-with-mas', type=bool, default=True,
+    #                   help='Whether or not fastpitch was trained with Monotonic Alignment Search (MAS)')
     pretrained_tts_args.add_argument('--fastpitch-chkpt', type=str, required=True,
                       help='Path to pretrained fastpitch checkpoint')
-    # pretrained_tts_args.add_argument('--input-type', type=str, default='char',
-    #                   choices=['char', 'phone', 'pf', 'unit'],
-    #                   help='Input symbols used, either char (text), phone, pf '
-    #                   '(phonological feature vectors) or unit (quantized acoustic '
-    #                   'representation IDs)')
-    # pretrained_tts_args.add_argument('--fastpitch-symbol-set', type=str, default='english_basic_lowercase',
-    #                   help='Define symbol set for input sequences. For quantized '
-    #                   'unit inputs, pass the size of the vocabulary.')
-    # pretrained_tts_args.add_argument('--fastpitch-n-speakers', type=int, default=1,
-    #                   help='Condition on speaker, value > 1 enables trainable '
-    #                   'speaker embeddings.')
-    # pretrained_tts_args.add_argument('--fastpitch-use-sepconv', type=bool, default=True,
+    pretrained_tts_args.add_argument('--input-type', type=str, default='char',
+                      choices=['char', 'phone', 'pf', 'unit'],
+                      help='Input symbols used, either char (text), phone, pf '
+                      '(phonological feature vectors) or unit (quantized acoustic '
+                      'representation IDs)')
+    pretrained_tts_args.add_argument('--symbol-set', type=str, default='english_basic_lowercase',
+                      help='Define symbol set for input sequences. For quantized '
+                      'unit inputs, pass the size of the vocabulary.')
+    pretrained_tts_args.add_argument('--n-speakers', type=int, default=1,
+                      help='Condition on speaker, value > 1 enables trainable '
+                      'speaker embeddings.')
+    # pretrained_tts_args.add_argument('--use-sepconv', type=bool, default=True,
     #                   help='Use depthwise separable convolutions')
 
     return parser
@@ -80,40 +80,47 @@ def load_checkpoint(args, model, filepath):
 
 def freeze_weights(model):
     # NB wait... won't this stop backprop of gradients?
-    # We just don't want to add the fastpitch model weights to the optimiser...
+    # We just don't want to add the fastpitch/quantiser model weights to the optimiser...
     for param in model.parameters():
         param.requires_grad = False
 
+def init_embedding_weights(source_tensor, target_tensor):
+    """copy weights inplace from source tensor to target tensor"""
+    target_tensor.requires_grad = False
+    target_tensor.copy_(source_tensor.clone().detach())
+    target_tensor.requires_grad = True
+
 def load_pretrained_fastpitch(args):
-    print('DEBUG', args)
+    # load chkpt
     device = torch.device('cuda' if args.cuda else 'cpu')
     model_config = fastpitch_model.get_model_config('FastPitch', args)
-    fastpitch = fastpitch_model.get_model('FastPitch', model_config, device, forward_mas=args.fastpitch_with_mas)
+    fastpitch = fastpitch_model.get_model('FastPitch', model_config, device, forward_mas=args.use_mas)
     load_checkpoint(args, fastpitch, args.fastpitch_chkpt)
-    freeze_weights(fastpitch)
-
-    # tts = convert_embedding_table_to_linear_layer(tts)
-
-    vocab_size = len(fastpitch.input_symbols)
-    grapheme_embedding_dim = fastpitch.embedding.size()[0]
-    return fastpitch, vocab_size, grapheme_embedding_dim
+    # get information about grapheme embedding table
+    n_symbols = fastpitch.encoder.word_emb.weight.size(0)
+    grapheme_embedding_dim = fastpitch.encoder.word_emb.weight.size(1)
+    return fastpitch, n_symbols, grapheme_embedding_dim
 
 def train(rank, args):
     args.local_rank = rank
-    tts, vocab_size, grapheme_embedding_dim = load_pretrained_fastpitch(args)
+    tts, n_symbols, grapheme_embedding_dim = load_pretrained_fastpitch(args)
 
-    if 'modeltype' == 'autoregressive':
-        raise NotImplementedError
-    elif 'modeltype' == 'non_autoregressive':
-        respeller = EncoderRespeller(in_vocab_size=vocab_size, d_model=args.d_model)
+    respeller = EncoderRespeller(n_symbols=n_symbols, d_model=args.d_model)
 
     quantiser = GumbelVectorQuantizer(
         in_dim=args.d_model,
-        codebook_size=vocab_size,  # number of codebook entries
-        temp=args.latent_temp,
+        codebook_size=n_symbols,  # number of codebook entries
         embedding_dim=grapheme_embedding_dim,
+        temp=args.latent_temp,
     )
-    quantiser.init_embedding_weights(tts.embedding)
+
+    # copy grapheme embeddings from fastpitch to gumbelsoftmax codebook
+    init_embedding_weights(tts.encoder.word_emb.weight.unsqueeze(0), quantiser.vars)
+
+    # if init_respeller_grapheme_embeddings:
+    #     init_embedding_weights(tts.encoder.word_emb.weight.unsqueeze(0), respeller.embed)
+
+    # skip_emb(fastpitch)
 
     acoustic_loss_fn = Softdtw()
 
@@ -158,9 +165,7 @@ def main():
     parser = argparse.ArgumentParser(description='PyTorch FastPitch Training',
                                      allow_abbrev=False)
     parser = parse_args(parser)
-    args, unk_args = parser.parse_known_args()
-    if len(unk_args) > 0:
-        raise ValueError(f'Invalid options {unk_args}')
+    args, _unk_args = parser.parse_known_args()
 
     parser = fastpitch_model.parse_model_args('FastPitch', parser)
     args, unk_args = parser.parse_known_args()

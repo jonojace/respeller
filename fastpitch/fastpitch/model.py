@@ -268,8 +268,19 @@ class FastPitch(nn.Module):
         mel_out = self.proj(dec_out)
         return mel_out, dec_mask, dur_pred, log_dur_pred, pitch_pred
 
-    def forward_mas(self, inputs, use_gt_pitch=True, pace=1.0, max_duration=75,
+    def forward_mas(self, inputs, use_gt_pitch=True, pace=1.0, max_duration=75, skip_embeddings=False,
                     use_gt_durations=None):  # compatibility
+        """
+        fastpitch forward using monotonic alignment search rather than gt durations (one alignment to rule them all)
+
+        :param inputs:
+        :param use_gt_pitch:
+        :param pace:
+        :param max_duration:
+        :param skip_embeddings: for respeller training, respeller has its own copy of the grapheme embedding table from fastpitch
+        :param use_gt_durations: here for compatability
+        :return:
+        """
         (inputs, input_lens, mel_tgt, mel_lens, attn_prior, _, pitch_dense, speaker) = inputs
 
         text_max_len = inputs.size(1)
@@ -283,7 +294,10 @@ class FastPitch(nn.Module):
             spk_emb.mul_(self.speaker_emb_weight)
 
         # Input FFT
-        enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb)
+        if skip_embeddings:
+            enc_out, enc_mask = self.encoder_no_embeddings(inputs, conditioning=spk_emb)
+        else:
+            enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb)
 
         # Predict durations
         log_dur_pred = self.duration_predictor(enc_out, enc_mask).squeeze(-1)
@@ -294,7 +308,10 @@ class FastPitch(nn.Module):
         #print(pitch_pred, pitch_pred.shape)
 
         # Alignment
-        text_emb = self.encoder.word_emb(inputs)
+        if skip_embeddings:
+            text_emb = inputs
+        else:
+            text_emb = self.encoder.word_emb(inputs)
 
         # make sure to do the alignments before folding
         attn_mask = mask_from_lens(input_lens, max_len=text_max_len)
@@ -331,8 +348,19 @@ class FastPitch(nn.Module):
                 pitch_tgt, attn_soft, attn_hard, attn_hard_dur, attn_logprob)
 
     def infer(self, inputs, pace=1.0, dur_tgt=None, pitch_tgt=None,
-              pitch_transform=None, max_duration=75, speaker=0):
+              pitch_transform=None, max_duration=75, speaker=0, skip_embeddings=False):
+        """
 
+        :param inputs:
+        :param pace:
+        :param dur_tgt:
+        :param pitch_tgt:
+        :param pitch_transform:
+        :param max_duration:
+        :param speaker:
+        :param skip_embeddings: for respeller training, respeller has its own copy of the grapheme embedding table from fastpitch
+        :return:
+        """
         if self.speaker_emb is None:
             spk_emb = 0
         else:
@@ -341,7 +369,10 @@ class FastPitch(nn.Module):
             spk_emb.mul_(self.speaker_emb_weight)
 
         # Input FFT
-        enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb)
+        if skip_embeddings:
+            enc_out, enc_mask = self.encoder_no_embeddings(inputs, conditioning=spk_emb)
+        else:
+            enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb)
 
         # Predict durations
         log_dur_pred = self.duration_predictor(enc_out, enc_mask)
