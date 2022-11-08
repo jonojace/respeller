@@ -215,10 +215,14 @@ class FFTransformer(nn.Module):
                     dropatt=dropatt, sepconv=sepconv, pre_lnorm=pre_lnorm)
             )
 
-    def forward(self, dec_inp, seq_lens=None, conditioning=0):
-        if self.word_emb is None:
+    def forward(self, dec_inp, seq_lens=None, conditioning=0, skip_word_emb=False, ids=None):
+        if self.word_emb is None or skip_word_emb:
             inp = dec_inp
-            mask = mask_from_lens(seq_lens).unsqueeze(2)
+            if skip_word_emb:
+                mask = (ids != self.padding_idx).unsqueeze(2)
+            else:
+                mask = mask_from_lens(seq_lens).unsqueeze(2)
+            print('SKIPPED word emb!')
         else:
             inp = self.word_emb(dec_inp)
             # [bsz x L x 1]

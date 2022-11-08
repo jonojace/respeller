@@ -294,10 +294,7 @@ class FastPitch(nn.Module):
             spk_emb.mul_(self.speaker_emb_weight)
 
         # Input FFT
-        if skip_embeddings:
-            enc_out, enc_mask = self.encoder_no_embeddings(inputs, conditioning=spk_emb)
-        else:
-            enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb)
+        enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb, skip_word_emb=skip_embeddings)
 
         # Predict durations
         log_dur_pred = self.duration_predictor(enc_out, enc_mask).squeeze(-1)
@@ -348,7 +345,7 @@ class FastPitch(nn.Module):
                 pitch_tgt, attn_soft, attn_hard, attn_hard_dur, attn_logprob)
 
     def infer(self, inputs, pace=1.0, dur_tgt=None, pitch_tgt=None,
-              pitch_transform=None, max_duration=75, speaker=0, skip_embeddings=False):
+              pitch_transform=None, max_duration=75, speaker=0, skip_embeddings=False, ids=None):
         """
 
         :param inputs:
@@ -369,10 +366,7 @@ class FastPitch(nn.Module):
             spk_emb.mul_(self.speaker_emb_weight)
 
         # Input FFT
-        if skip_embeddings:
-            enc_out, enc_mask = self.encoder_no_embeddings(inputs, conditioning=spk_emb)
-        else:
-            enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb)
+        enc_out, enc_mask = self.encoder(inputs, conditioning=spk_emb, skip_word_emb=skip_embeddings, ids=ids)
 
         # Predict durations
         log_dur_pred = self.duration_predictor(enc_out, enc_mask)
