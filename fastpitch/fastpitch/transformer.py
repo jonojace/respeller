@@ -216,13 +216,14 @@ class FFTransformer(nn.Module):
             )
 
     def forward(self, dec_inp, seq_lens=None, conditioning=0, skip_word_emb=False, ids=None):
+        # if self.word_emb is None, then this is likely the decoder
+        # encoder uses word_emb, but we optionally skip it when training respeller (as we transfer grapheme embeddings to gumbel softmax module)
         if self.word_emb is None or skip_word_emb:
             inp = dec_inp
             if skip_word_emb:
                 mask = (ids != self.padding_idx).unsqueeze(2)
             else:
                 mask = mask_from_lens(seq_lens).unsqueeze(2)
-            print('SKIPPED word emb!')
         else:
             inp = self.word_emb(dec_inp)
             # [bsz x L x 1]
