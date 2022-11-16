@@ -134,6 +134,16 @@ class GumbelVectorQuantizer(nn.Module):
             res += indices[..., i] * (self.codebook_size**exponent)
         return res
 
+    def trainable_parameters(self):
+        """return the model parameters that we wish to update for respeller training
+        note that we ignore self.vars as we wish it to be initialised and frozen to the grapheme
+        embedding table from the TTS model"""
+        trainable_parameters = []
+        for name, param in self.named_parameters():
+            if name != 'vars':
+                trainable_parameters.append(param)
+        return trainable_parameters
+
     def forward_idx(self, x):
         res = self.forward(x, produce_targets=True)
         return res["x"], res["targets"]
