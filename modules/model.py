@@ -46,17 +46,17 @@ class EncoderRespeller(nn.Module):
         # self.linear = Linear(d_model, out_vocab_size)
 
     def forward(self, inputs):
-        print(f"1: before embed {inputs.size()=}")
+        # print(f"1: before embed {inputs.size()=}")
         inputs = self.embedding(inputs)
-        print(f"2: after embed {inputs.size()=}")
+        # print(f"2: after embed {inputs.size()=}")
         if self.batch_first:
             inputs = inputs.transpose(0,1)
         inputs = self.pos_encoder(inputs)
         if self.batch_first:
             inputs = inputs.transpose(0,1)
-        print(f"3: after pos encoder {inputs.size()=}")
+        # print(f"3: after pos encoder {inputs.size()=}")
         logits = self.encoder(inputs)
-        print(f"4: after ff transformer {logits.size()=}")
+        # print(f"4: after ff transformer {logits.size()=}")
         # logits = self.linear(inputs)
         return logits
 
