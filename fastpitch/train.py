@@ -47,11 +47,22 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch_optimizer import Lamb
 
-import common.tb_dllogger as logger
-import models
-from fastpitch.attn_loss_function import AttentionBinarizationLoss
-from fastpitch.data_function import batch_to_gpu, TextMelAliCollate, TextMelAliLoader
-from fastpitch.loss_function import FastPitchLoss, FastPitchMASLoss
+cwd = os.getcwd()
+folder = cwd.split('/')[-1]
+if folder == "respeller":
+    # training respeller
+    import fastpitch.common.tb_dllogger as logger
+    import fastpitch.models as models
+    from fastpitch.fastpitch.attn_loss_function import AttentionBinarizationLoss
+    from fastpitch.fastpitch.data_function import batch_to_gpu, TextMelAliCollate, TextMelAliLoader
+    from fastpitch.fastpitch.loss_function import FastPitchLoss, FastPitchMASLoss
+elif folder == "fastpitch":
+    # training fastpitch
+    import common.tb_dllogger as logger
+    import models
+    from fastpitch.attn_loss_function import AttentionBinarizationLoss
+    from fastpitch.data_function import batch_to_gpu, TextMelAliCollate, TextMelAliLoader
+    from fastpitch.loss_function import FastPitchLoss, FastPitchMASLoss
 
 
 def parse_args(parser):
