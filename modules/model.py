@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer, LayerNorm
 import math
+from modules.gumbel_vector_quantizer import GumbelVectorQuantizer
 
 # class EncoderDecoderRespeller(nn.Module):
 #     def __init__(self):
@@ -9,16 +10,25 @@ import math
 #         self.encoder =
 #         self.decoder =
 
+def init_embedding_weights(source_tensor, target_tensor):
+    """copy weights inplace from source tensor to target tensor"""
+    target_tensor.requires_grad = False
+    target_tensor.copy_(source_tensor.clone().detach())
+    target_tensor.requires_grad = True
+
 class EncoderRespeller(nn.Module):
     def __init__(
             self,
             n_symbols,
+            pretrained_tts,
             d_model=512,
             nhead=4,
             num_layers=4,
             pretrained_embedding_table=None, # optional - initialise from pretrained grapheme embedding table from TTS
             freeze_embedding_table=False,
             batch_first=True,
+            grapheme_embedding_dim=384,
+            latent_temp=(2, 0.5, 0.999995),
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
@@ -44,6 +54,15 @@ class EncoderRespeller(nn.Module):
             norm=encoder_norm,
         )
         # self.linear = Linear(d_model, out_vocab_size)
+        self.quantiser = GumbelVectorQuantizer(
+            in_dim=d_model,
+            codebook_size=n_symbols,  # number of codebook entries
+            embedding_dim=grapheme_embedding_dim,
+            temp=latent_temp,
+        )
+
+        # load weights from pretrained tts into gumbel softmax
+        init_embedding_weights(pretrained_tts.encoder.word_emb.weight.unsqueeze(0), self.quantiser.vars)
 
     def forward(self, inputs):
         # print(f"1: before embed {inputs.size()=}")
@@ -58,7 +77,12 @@ class EncoderRespeller(nn.Module):
         logits = self.encoder(inputs)
         # print(f"4: after ff transformer {logits.size()=}")
         # logits = self.linear(inputs)
-        return logits
+
+        quantiser_outdict = self.quantiser(logits, produce_targets=True)
+        g_embedding_indices = quantiser_outdict["targets"].squeeze(2)
+        g_embeddings = quantiser_outdict["x"]
+
+        return g_embeddings, g_embedding_indices
 
 class PositionalEncoding(nn.Module):
     r"""Inject some information about the relative or absolute position of the tokens in the sequence.
