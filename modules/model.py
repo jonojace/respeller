@@ -21,25 +21,28 @@ class EncoderRespeller(nn.Module):
             self,
             n_symbols,
             pretrained_tts,
+            d_embedding=384,
             d_model=512,
             nhead=4,
             num_layers=4,
-            pretrained_embedding_table=None, # optional - initialise from pretrained grapheme embedding table from TTS
-            freeze_embedding_table=False,
+            pretrained_embedding_table=True, # optional - initialise from pretrained grapheme embedding table from TTS
+            freeze_embedding_table=True,
             batch_first=True,
             grapheme_embedding_dim=384,
             latent_temp=(2, 0.5, 0.999995),
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
-        self.embedding = nn.Embedding(n_symbols, d_model)
         self.batch_first = batch_first
+        self.weights_to_freeze = ['quantiser.vars'] # weights that we do not update during training
 
+        self.embedding = nn.Embedding(n_symbols, d_embedding)
         if pretrained_embedding_table is not None:
-            initialise_embedding_table(self.embedding, pretrained_embedding_table)
+            init_embedding_weights(pretrained_tts.encoder.word_emb.weight, self.embedding.weight)
             if freeze_embedding_table:
-                # freeze_embedding_table.freeze_weights()
-                raise NotImplementedError
+                self.weights_to_freeze.append('embedding.weight')
+
+        self.proj = nn.Linear(d_embedding, d_model)
 
         self.pos_encoder = PositionalEncoding(d_model)
         encoder_layer = TransformerEncoderLayer(
@@ -64,12 +67,25 @@ class EncoderRespeller(nn.Module):
         # load weights from pretrained tts into gumbel softmax
         init_embedding_weights(pretrained_tts.encoder.word_emb.weight.unsqueeze(0), self.quantiser.vars)
 
+    def trainable_parameters(self):
+        """return the model parameters that we wish to update for respeller training
+        note that we ignore self.vars as we wish it to be initialised and frozen to the grapheme
+        embedding table from the TTS model"""
+        trainable_parameters = []
+        for name, param in self.named_parameters():
+            if name not in self.weights_to_freeze:
+                trainable_parameters.append(param)
+            else:
+                print("Frozen weights:", name, param.size())
+        return trainable_parameters
+
     def forward(self, inputs):
         # print(f"1: before embed {inputs.size()=}")
         inputs = self.embedding(inputs)
         # print(f"2: after embed {inputs.size()=}")
         if self.batch_first:
             inputs = inputs.transpose(0,1)
+        inputs = self.proj(inputs)
         inputs = self.pos_encoder(inputs)
         if self.batch_first:
             inputs = inputs.transpose(0,1)
@@ -125,6 +141,3 @@ class PositionalEncoding(nn.Module):
 
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
-
-def initialise_embedding_table(nn_embedding, weights):
-    raise NotImplementedError
