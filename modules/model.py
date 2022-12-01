@@ -76,7 +76,8 @@ class EncoderRespeller(nn.Module):
             if name not in self.weights_to_freeze:
                 trainable_parameters.append(param)
             else:
-                print("Frozen weights:", name, param.size())
+                # print("DEBUG - Frozen weights:", name, param.size())
+                pass
         return trainable_parameters
 
     def forward(self, inputs):
