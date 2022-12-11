@@ -185,6 +185,9 @@ class GumbelVectorQuantizer(nn.Module):
         else:
             x = hard_x
 
+        # print(f"DEBUG, gumbel {self.training=}")
+        # print(f"       gumbel {x=}")
+
         x = x.view(bsz * tsz, -1)
 
         vars = self.vars
