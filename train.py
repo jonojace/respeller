@@ -16,7 +16,8 @@ from torch.utils.data import DataLoader
 import json
 import glob
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
+import warnings
 
 from fastpitch import models as fastpitch_model
 from fastpitch.common.text.text_processing import TextProcessor
@@ -43,6 +44,9 @@ from datetime import datetime
 
 from fastpitch.common.text.text_processing import TextProcessor # for respellerdataset
 
+from tqdm import tqdm
+import os
+
 def parse_args(parser):
     """Parse commandline arguments"""
     parser.add_argument('-o', '--chkpt-save-dir', type=str, required=True,
@@ -55,6 +59,8 @@ def parse_args(parser):
     train = parser.add_argument_group('training setup')
     train.add_argument('--cuda', action='store_true',
                        help='Enable GPU training')
+    train.add_argument('--num-cpus', type=int, default=2,
+                       help='Num of cpus on node. Used to optimise number of dataloader workers during training.')
     train.add_argument('--batch-size', type=int, default=16,
                        help='Batchsize (this is divided by number of GPUs if running Data Distributed Parallel Training)')
     train.add_argument('--seed', type=int, default=1337,
@@ -357,7 +363,13 @@ class RespellerDataset(torch.utils.data.Dataset):
         return torch.IntTensor(self.tp.encode_text(text))
 
     def decode_text(self, encoded):
-        return [self.tp.id_to_symbol[id] for id in encoded.tolist()]
+        if encoded.dim() == 1:
+            decodings = [self.tp.id_to_symbol[id] for id in encoded.tolist()]
+        else:
+            decodings = []
+            for batch_idx in range(encoded.size(0)):
+                decodings.append(''.join(self.tp.id_to_symbol[idx] for idx in encoded[batch_idx].tolist()))
+        return decodings
 
     @staticmethod
     def get_mel_len(melfilepath):
@@ -552,17 +564,20 @@ def pretraining_prep(args, rank):
 
     print('Finished setting up models + dataloaders')
 
-    return (
-        train_dataset,
-        val_dataset,
-        train_loader,
-        val_loader,
-        respeller,
-        tts,
-        vocoder,
-        optimizer,
-        criterion,
-    )
+    return {
+        "start_epoch": start_epoch,
+        "total_iter": total_iter,
+        "train_dataset": train_dataset,
+        "val_dataset": val_dataset,
+        "collate_fn": collate_fn,
+        "train_loader": train_loader,
+        "val_loader": val_loader,
+        "respeller": respeller,
+        "tts": tts,
+        "vocoder": vocoder,
+        "optimizer": optimizer,
+        "criterion": criterion,
+    }
 
 
 def log_spectrogram(log_mel, figsize=(15, 5), image_name=""):
@@ -573,7 +588,7 @@ def log_spectrogram(log_mel, figsize=(15, 5), image_name=""):
     return fig
 
 
-def get_spectrograms_plots(y, fnames, step, n=4, label='Predicted spectrogram', mas=False, return_figs=False):
+def get_spectrograms_plots(y, fnames, n=4, label='Predicted spectrogram', mas=False, return_figs=False):
     """Plot spectrograms for n utterances in batch"""
     bs = len(fnames)
     n = min(n, bs)
@@ -613,7 +628,7 @@ def get_spectrograms_plots(y, fnames, step, n=4, label='Predicted spectrogram', 
     return image_names, spectrograms
 
 
-def generate_audio(y, fnames, step, vocoder=None, sampling_rate=22050, hop_length=256,
+def generate_audio(y, fnames, vocoder=None, sampling_rate=22050, hop_length=256,
                    n=4, label='Predicted audio', mas=False):
     """Generate audio from spectrograms for n utterances in batch"""
     bs = len(fnames)
@@ -727,16 +742,6 @@ def log_wandb_table(
         for fig in orig_pred_specs + pred_specs:
             plt.close(fig)
 
-
-def decode_indices(indices):
-    """decode batch of indices to text
-    [bsz, seqlen]"""
-    decodings = []
-    for batch_idx in range(indices.size(0)):
-        decodings.append(''.join(tp.id_to_symbol[id] for id in indices[batch_idx].tolist()))
-    return decodings
-
-
 def select(x, bsz, n):
     """select items in batch that will be visualised/converted to audio"""
     n = min(n, bsz)
@@ -805,31 +810,31 @@ def validate(
                     n = bsz
 
                 # get original word and respellings for logging
-                original_words = decode_indices(x['text_padded'])
-                respellings = decode_indices(g_embedding_indices)
+                original_words = valset.decode_text(x['text_padded'])
+                respellings = valset.decode_text(g_embedding_indices)
 
                 # vocode original recorded speech
                 gt_mel = y['mel_padded']
                 gt_mel_lens = y['mel_lengths']
-                vocoded_gt = generate_audio((gt_mel, gt_mel_lens), fnames, total_iter, vocoder, sampling_rate,
+                vocoded_gt = generate_audio((gt_mel, gt_mel_lens), fnames, vocoder, sampling_rate,
                                             hop_length, n=n, label='Predicted audio', mas=True)
 
                 # get melspec + generated audio for original spellings
-                orig_pred_mel, orig_dec_lens, _dur_pred, _pitch_pred = tts(
+                orig_pred_mel, orig_dec_lens, _dur_pred, _pitch_pred = tts_model(
                     inputs=x['text_padded'],
                     skip_embeddings=False,
                 )
                 orig_pred_mel = orig_pred_mel.transpose(1, 2)
                 _orig_token_names, orig_pred_specs = get_spectrograms_plots((orig_pred_mel, orig_dec_lens), fnames,
-                                                                            total_iter, n=n,
+                                                                            n=n,
                                                                             label='Predicted spectrogram', mas=True)
-                orig_pred_audios = generate_audio((orig_pred_mel, orig_dec_lens), fnames, total_iter, vocoder,
+                orig_pred_audios = generate_audio((orig_pred_mel, orig_dec_lens), fnames, vocoder,
                                                   sampling_rate, hop_length, n=n, label='Predicted audio', mas=True)
 
                 # get melspec + generated audio for respellings
-                token_names, pred_specs = get_spectrograms_plots((pred_mel, dec_lens), fnames, total_iter, n=n,
+                token_names, pred_specs = get_spectrograms_plots((pred_mel, dec_lens), fnames, n=n,
                                                                  label='Predicted spectrogram', mas=True)
-                pred_audios = generate_audio((pred_mel, dec_lens), fnames, total_iter, vocoder, sampling_rate,
+                pred_audios = generate_audio((pred_mel, dec_lens), fnames, vocoder, sampling_rate,
                                              hop_length, n=n, label='Predicted audio', mas=True)
 
                 # log everything to wandb table
@@ -900,43 +905,16 @@ def byte_to_gigabyte(bytes):
     return bytes / 1000000000
 
 
-def run_val(epoch):
-    """wrap in fn so that we can call at:
-    1. before training model
-    2. at end of every X epochs"""
-    # log audio and respellings for training set words
-    validate(
-        respeller_model=respeller,
-        tts_model=tts,
-        vocoder=vocoder,
-        criterion=criterion,
-        valset=train_dataset,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        epoch=epoch,
-        sampling_rate=args.sampling_rate,
-        hop_length=args.hop_length,
-        audio_interval=args.val_log_interval,
-        only_log_table=True,
-        train=True,
-    )
-
-    # log audio and respellings for val set words
-    validate(
-        respeller_model=respeller,
-        tts_model=tts,
-        vocoder=vocoder,
-        criterion=criterion,
-        valset=val_dataset,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        epoch=epoch,
-        sampling_rate=args.sampling_rate,
-        hop_length=args.hop_length,
-        audio_interval=args.val_log_interval,
-    )
-
-def train_loop():
+def train_loop(
+    args,
+    start_epoch,
+    total_iter,
+    train_loader,
+    respeller,
+    tts,
+    optimizer,
+    criterion,
+):
     for epoch in range(start_epoch, args.epochs + 1):
         # logging metrics
         epoch_start_time = time.perf_counter()
@@ -1060,8 +1038,9 @@ def train_loop():
 
         run_val(epoch=epoch)
 
+        respeller_model_config = None # TODO fix this! replace with a model config similar to how fastpitch saves checkpoints in maybe_save_checkpoint!!!
         maybe_save_checkpoint(args, respeller, optimizer,
-                              epoch, total_iter, model_config)
+                              epoch, total_iter, respeller_model_config)
 
         logger.flush()
 
@@ -1069,23 +1048,69 @@ def train_loop():
 
     # wandb.finish() # useful in jupyter notebooks
 
+def run_val(
+    args,
+    epoch,
+    train_dataset,
+    val_dataset,
+    collate_fn,
+    respeller,
+    tts,
+    vocoder,
+    criterion,
+):
+    """wrap in fn so that we can call at:
+    1. before training model
+    2. at end of every X epochs"""
+    # log audio and respellings for training set words
+    validate(
+        respeller_model=respeller,
+        tts_model=tts,
+        vocoder=vocoder,
+        criterion=criterion,
+        valset=train_dataset,
+        batch_size=args.batch_size,
+        collate_fn=collate_fn,
+        epoch=epoch,
+        sampling_rate=args.sampling_rate,
+        hop_length=args.hop_length,
+        audio_interval=args.val_log_interval,
+        only_log_table=True,
+        train=True,
+    )
+
+    # log audio and respellings for val set words
+    validate(
+        respeller_model=respeller,
+        tts_model=tts,
+        vocoder=vocoder,
+        criterion=criterion,
+        valset=val_dataset,
+        batch_size=args.batch_size,
+        collate_fn=collate_fn,
+        epoch=epoch,
+        sampling_rate=args.sampling_rate,
+        hop_length=args.hop_length,
+        audio_interval=args.val_log_interval,
+    )
+
 def train(rank, args):
-    (
-        train_dataset,
-        val_dataset,
-        train_loader,
-        val_loader,
-        respeller,
-        tts,
-        vocoder,
-        optimizer,
-        criterion,
-    ) =  pretraining_prep(args, rank)
+    d =  pretraining_prep(args, rank)
 
-    if not args.skip_before_train_loop_validation:
-        run_val(epoch=0)
+    if not args.skip_before_train_loop_validation and d['start_epoch'] == 1 and d['total_iter'] == 0:
+        run_val(
+            args,
+            epoch=d['start_epoch'],
+            train_dataset=d['train_dataset'],
+            val_dataset=d['val_dataset'],
+            collate_fn=d['collate_fn'],
+            respeller=d['respeller'],
+            tts=d['tts'],
+            vocoder=d['vocoder'],
+            criterion=d['criterion'],
+        )
 
-    train_loop()
+    train_loop(args, **d)
 
 def main():
     parser = argparse.ArgumentParser(description='PyTorch Respeller Training', allow_abbrev=False)
@@ -1109,10 +1134,10 @@ def main():
 
     init_wandb(args)
 
-    if args.distributed_run:
-        mp.spawn(train, nprocs=args.num_gpus, args=(args,))
-    else:
-        train(0, args)
+    # if args.distributed_run:
+    #     mp.spawn(train, nprocs=args.num_gpus, args=(args,))
+    # else:
+    train(0, args)
 
 if __name__ == '__main__':
     main()
