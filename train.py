@@ -33,7 +33,6 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from PIL import Image
 
-import fastpitch.common.tb_dllogger as logger
 from torch_optimizer import Lamb
 import time
 from fastpitch.common.utils import mask_from_lens
@@ -53,8 +52,6 @@ def parse_args(parser):
                         help='Directory to save checkpoints')
     parser.add_argument('-d', '--dataset-path', type=str, default='./',
                         help='Path to dataset')
-    parser.add_argument('--log-file', type=str, default=None,
-                        help='Path to a DLLogger log file')
 
     train = parser.add_argument_group('training setup')
     train.add_argument('--cuda', action='store_true',
@@ -63,6 +60,8 @@ def parse_args(parser):
                        help='Num of cpus on node. Used to optimise number of dataloader workers during training.')
     train.add_argument('--batch-size', type=int, default=16,
                        help='Batchsize (this is divided by number of GPUs if running Data Distributed Parallel Training)')
+    train.add_argument('--val-batch-size', type=int, default=32,
+                      help='Batchsize for validation (determines how many samples show up in wandb')
     train.add_argument('--seed', type=int, default=1337,
                        help='Seed for PyTorch random number generators')
     train.add_argument('--grad-accumulation', type=int, default=1,
@@ -224,6 +223,7 @@ def maybe_save_checkpoint(args, model, optimizer, epoch,
     if not intermediate and epoch < args.epochs:
         return
 
+    os.makedirs(args.chkpt_save_dir, exist_ok=True)
     fpath = os.path.join(args.chkpt_save_dir, f"respeller_checkpoint_{epoch}.pt")
     print(f"Saving model and optimizer state at epoch {epoch} to {fpath}")
     checkpoint = {'epoch': epoch,
@@ -489,96 +489,6 @@ def mean_absolute_error(x, y):
     x = x.unsqueeze(2).expand(-1, n, m, d)
     y = y.unsqueeze(1).expand(-1, n, m, d)
     return torch.abs(x - y).sum(3)
-
-def pretraining_prep(args, rank):
-    args.local_rank = rank
-    device = torch.device('cuda' if args.cuda else 'cpu')
-
-    # load models
-    tts, n_symbols, grapheme_embedding_dim, model_config = load_pretrained_fastpitch(args)
-    respeller = EncoderRespeller(n_symbols=n_symbols, pretrained_tts=tts, d_model=args.d_model)
-
-    if args.dist_func == 'l1':
-        dist_func = mean_absolute_error
-    elif args.dist_func == 'l2':
-        dist_func = None  # softdtw package uses L2 as default
-    else:
-        dist_func = None  # softdtw package uses L2 as default
-
-    criterion = SoftDTW(use_cuda=True, gamma=args.softdtw_temp, bandwidth=args.softdtw_bandwidth,
-                        dist_func=dist_func)  # input should be size [bsz, seqlen, dim]
-
-    tts.to(device)
-    respeller.to(device)
-    criterion.to(device)
-
-    # load optimiser and assign to it the weights to be trained
-    kw = dict(lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9,
-              weight_decay=args.weight_decay)
-    optimizer = Lamb(respeller.trainable_parameters(), **kw)
-
-    # (optional) load checkpoint for respeller
-    start_epoch = [1]
-    start_iter = [0]
-    assert args.checkpoint_path is None or args.resume is False, (
-        "Specify a single checkpoint source")
-    if args.checkpoint_path is not None:
-        ch_fpath = args.checkpoint_path
-    elif args.resume:
-        ch_fpath = last_checkpoint(args.chkpt_save_dir)
-    else:
-        ch_fpath = None
-    if ch_fpath is not None:
-        load_respeller_checkpoint(args, respeller, ch_fpath, optimizer, start_epoch, start_iter)
-
-    start_epoch = start_epoch[0]
-    total_iter = start_iter[0]
-
-    # create datasets, collate func, dataloader
-    train_dataset = RespellerDataset(
-        wordaligned_speechreps_dir=args.wordaligned_speechreps,
-        wordlist=args.train_wordlist,
-        max_examples_per_wordtype=args.max_examples_per_wordtype,
-    )
-    val_dataset = RespellerDataset(
-        wordaligned_speechreps_dir=args.wordaligned_speechreps,
-        wordlist=args.val_wordlist,
-    )
-    num_cpus = args.num_cpus  # TODO change to CLA? detect from wandb or some automatic way???
-    collate_fn = Collate()
-    train_loader = DataLoader(train_dataset, num_workers=2 * num_cpus, shuffle=True,
-                              sampler=None, batch_size=args.batch_size,
-                              pin_memory=False, drop_last=True,
-                              collate_fn=collate_fn)
-    val_loader = DataLoader(val_dataset, num_workers=2 * num_cpus, shuffle=False,
-                            sampler=None, batch_size=args.batch_size,
-                            pin_memory=False, collate_fn=collate_fn)
-
-    # load pretrained hifigan
-    vocoder = load_vocoder(args, device)
-
-    # train loop
-    respeller.train()
-    # quantiser.train()
-    tts.eval()
-
-    print('Finished setting up models + dataloaders')
-
-    return {
-        "start_epoch": start_epoch,
-        "total_iter": total_iter,
-        "train_dataset": train_dataset,
-        "val_dataset": val_dataset,
-        "collate_fn": collate_fn,
-        "train_loader": train_loader,
-        "val_loader": val_loader,
-        "respeller": respeller,
-        "tts": tts,
-        "vocoder": vocoder,
-        "optimizer": optimizer,
-        "criterion": criterion,
-    }
-
 
 def log_spectrogram(log_mel, figsize=(15, 5), image_name=""):
     fig, ax = plt.subplots(figsize=figsize)
@@ -904,17 +814,157 @@ def forward_pass(respeller, tts, x):
 def byte_to_gigabyte(bytes):
     return bytes / 1000000000
 
+def pretraining_prep(args, rank):
+    args.local_rank = rank
+    device = torch.device('cuda' if args.cuda else 'cpu')
+
+    # load models
+    tts, n_symbols, grapheme_embedding_dim, model_config = load_pretrained_fastpitch(args)
+    respeller = EncoderRespeller(n_symbols=n_symbols, pretrained_tts=tts, d_model=args.d_model)
+
+    if args.dist_func == 'l1':
+        dist_func = mean_absolute_error
+    elif args.dist_func == 'l2':
+        dist_func = None  # softdtw package uses L2 as default
+    else:
+        dist_func = None  # softdtw package uses L2 as default
+
+    criterion = SoftDTW(use_cuda=True, gamma=args.softdtw_temp, bandwidth=args.softdtw_bandwidth,
+                        dist_func=dist_func)  # input should be size [bsz, seqlen, dim]
+
+    tts.to(device)
+    respeller.to(device)
+    criterion.to(device)
+
+    # load optimiser and assign to it the weights to be trained
+    kw = dict(lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-9,
+              weight_decay=args.weight_decay)
+    optimizer = Lamb(respeller.trainable_parameters(), **kw)
+
+    # (optional) load checkpoint for respeller
+    start_epoch = [1]
+    start_iter = [0]
+    assert args.checkpoint_path is None or args.resume is False, (
+        "Specify a single checkpoint source")
+    if args.checkpoint_path is not None:
+        ch_fpath = args.checkpoint_path
+    elif args.resume:
+        ch_fpath = last_checkpoint(args.chkpt_save_dir)
+    else:
+        ch_fpath = None
+    if ch_fpath is not None:
+        load_respeller_checkpoint(args, respeller, ch_fpath, optimizer, start_epoch, start_iter)
+
+    start_epoch = start_epoch[0]
+    total_iter = start_iter[0]
+
+    # create datasets, collate func, dataloader
+    train_dataset = RespellerDataset(
+        wordaligned_speechreps_dir=args.wordaligned_speechreps,
+        wordlist=args.train_wordlist,
+        max_examples_per_wordtype=args.max_examples_per_wordtype,
+    )
+    val_dataset = RespellerDataset(
+        wordaligned_speechreps_dir=args.wordaligned_speechreps,
+        wordlist=args.val_wordlist,
+    )
+    num_cpus = args.num_cpus  # TODO change to CLA? detect from wandb or some automatic way???
+    collate_fn = Collate()
+    train_loader = DataLoader(train_dataset, num_workers=2 * num_cpus, shuffle=True,
+                              sampler=None, batch_size=args.val_batch_size,
+                              pin_memory=False, drop_last=True,
+                              collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, num_workers=2 * num_cpus, shuffle=False,
+                            sampler=None, batch_size=args.val_batch_size,
+                            pin_memory=False, collate_fn=collate_fn)
+
+    # load pretrained hifigan
+    vocoder = load_vocoder(args, device)
+
+    # train loop
+    respeller.train()
+    # quantiser.train()
+    tts.eval()
+
+    print('Finished setting up models + dataloaders')
+
+    return {
+        "start_epoch": start_epoch,
+        "total_iter": total_iter,
+        "train_dataset": train_dataset,
+        "val_dataset": val_dataset,
+        "collate_fn": collate_fn,
+        "train_loader": train_loader,
+        "val_loader": val_loader,
+        "respeller": respeller,
+        "tts": tts,
+        "vocoder": vocoder,
+        "optimizer": optimizer,
+        "criterion": criterion,
+    }
+
+def run_val(
+    args,
+    epoch,
+    train_dataset,
+    val_dataset,
+    collate_fn,
+    respeller,
+    tts,
+    vocoder,
+    criterion,
+):
+    """wrap in fn so that we can call at:
+    1. before training model
+    2. at end of every X epochs"""
+    # log audio and respellings for training set words
+    validate(
+        respeller_model=respeller,
+        tts_model=tts,
+        vocoder=vocoder,
+        criterion=criterion,
+        valset=train_dataset,
+        batch_size=args.batch_size,
+        collate_fn=collate_fn,
+        epoch=epoch,
+        sampling_rate=args.sampling_rate,
+        hop_length=args.hop_length,
+        audio_interval=args.val_log_interval,
+        only_log_table=True,
+        train=True,
+    )
+
+    # log audio and respellings for val set words
+    validate(
+        respeller_model=respeller,
+        tts_model=tts,
+        vocoder=vocoder,
+        criterion=criterion,
+        valset=val_dataset,
+        batch_size=args.batch_size,
+        collate_fn=collate_fn,
+        epoch=epoch,
+        sampling_rate=args.sampling_rate,
+        hop_length=args.hop_length,
+        audio_interval=args.val_log_interval,
+    )
 
 def train_loop(
     args,
     start_epoch,
     total_iter,
+    train_dataset,
+    val_dataset,
+    collate_fn,
     train_loader,
     respeller,
     tts,
+    vocoder,
     optimizer,
     criterion,
 ):
+    print("\n *** Starting training! ***")
+
     for epoch in range(start_epoch, args.epochs + 1):
         # logging metrics
         epoch_start_time = time.perf_counter()
@@ -1036,63 +1086,25 @@ def train_loop(
 
         wandb.log(epoch_logs)
 
-        run_val(epoch=epoch)
+        run_val(
+            args,
+            epoch=epoch,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            collate_fn=collate_fn,
+            respeller=respeller,
+            tts=tts,
+            vocoder=vocoder,
+            criterion=criterion,
+        )
 
         respeller_model_config = None # TODO fix this! replace with a model config similar to how fastpitch saves checkpoints in maybe_save_checkpoint!!!
         maybe_save_checkpoint(args, respeller, optimizer,
                               epoch, total_iter, respeller_model_config)
 
-        logger.flush()
-
     print("\n *** Finished training! ***")
 
     # wandb.finish() # useful in jupyter notebooks
-
-def run_val(
-    args,
-    epoch,
-    train_dataset,
-    val_dataset,
-    collate_fn,
-    respeller,
-    tts,
-    vocoder,
-    criterion,
-):
-    """wrap in fn so that we can call at:
-    1. before training model
-    2. at end of every X epochs"""
-    # log audio and respellings for training set words
-    validate(
-        respeller_model=respeller,
-        tts_model=tts,
-        vocoder=vocoder,
-        criterion=criterion,
-        valset=train_dataset,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        epoch=epoch,
-        sampling_rate=args.sampling_rate,
-        hop_length=args.hop_length,
-        audio_interval=args.val_log_interval,
-        only_log_table=True,
-        train=True,
-    )
-
-    # log audio and respellings for val set words
-    validate(
-        respeller_model=respeller,
-        tts_model=tts,
-        vocoder=vocoder,
-        criterion=criterion,
-        valset=val_dataset,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        epoch=epoch,
-        sampling_rate=args.sampling_rate,
-        hop_length=args.hop_length,
-        audio_interval=args.val_log_interval,
-    )
 
 def train(rank, args):
     d =  pretraining_prep(args, rank)
@@ -1110,7 +1122,20 @@ def train(rank, args):
             criterion=d['criterion'],
         )
 
-    train_loop(args, **d)
+    train_loop(
+        args,
+        start_epoch=d["start_epoch"],
+        total_iter=d["total_iter"],
+        train_dataset=d['train_dataset'],
+        val_dataset=d['val_dataset'],
+        collate_fn=d['collate_fn'],
+        train_loader=d["train_loader"],
+        respeller=d["respeller"],
+        tts=d["tts"],
+        vocoder=d['vocoder'],
+        optimizer=d["optimizer"],
+        criterion=d["criterion"],
+    )
 
 def main():
     parser = argparse.ArgumentParser(description='PyTorch Respeller Training', allow_abbrev=False)
