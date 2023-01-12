@@ -165,6 +165,11 @@ fi
 
 echo "" >> temp_slurm_job.sh
 
+echo "#### Initialise wandb ####" >> temp_slurm_job.sh
+echo "export WANDB_API_KEY=afb11ca4f70d9fc0dfab01f24f1dece4c707cd36" >> temp_slurm_job.sh
+
+echo "" >> temp_slurm_job.sh
+
 echo "#### create the command to be run on the cluster ####" >> temp_slurm_job.sh
 echo "cmd_to_run_on_cluster=\"${cmd_to_run_on_cluster}\"" >> temp_slurm_job.sh
 
