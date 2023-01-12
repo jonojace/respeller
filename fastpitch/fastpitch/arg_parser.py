@@ -55,6 +55,10 @@ def parse_fastpitch_args(parent, add_help=False):
     symbols.add_argument('--eos-symbol', default=' ', type=str,
                          help='Only applicable when --add-spaces set to True.'
                               'Symbol to postpend each utterance text with.')
+    symbols.add_argument('--skip-spaces', action='store_true',
+                       help='Skip adding spaces at beginning of sentence in the TextProcessor')
+    symbols.add_argument('--skip-eos', action='store_true',
+                       help='Skip adding EOS symbol at beginning of sentence in the TextProcessor')
 
     arch = parser.add_argument_group('model-wide architecture parameters')
     arch.add_argument('--use-sepconv', action='store_true',

@@ -96,11 +96,12 @@ class UnitProcessor(object):
 # add_spaces and skip_spaces here
 class TextProcessor(object):
     def __init__(self, symbol_set, cleaner_names, handle_sil=False,
-                 add_spaces=False, skip_spaces=False, eos_symbol=' '):
+                 add_spaces=False, skip_spaces=False, eos_symbol=' ', skip_eos=False):
         self.symbols = get_symbols(symbol_set)
         self.cleaner_names = cleaner_names
         self.add_spaces = add_spaces
         self.skip_spaces = skip_spaces
+        self.skip_eos = skip_eos
         self.handle_sil = handle_sil
         self.eos_symbol = eos_symbol
         self.sil_symbols = ['sil', 'sp', 'spn']
@@ -166,5 +167,9 @@ class TextProcessor(object):
         # match character-level TextGrids which don't align spaces
         if self.skip_spaces:
             text = [i for i in text if i != ' ']
+        
+        if self.skip_eos:
+            text = [i for i in text if i != self.eos_symbol]
+        
         text_encoded = self.text_to_ids(text)
         return text_encoded
