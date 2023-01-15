@@ -29,7 +29,7 @@
 exclude_list=""
 #exclude_list=arnold
 #exclude_list=duflo
-#exclude_list=arnold,duflo
+exclude_list=arnold,duflo
 
 # Only include particular nodes
 include_list=""
@@ -167,6 +167,7 @@ echo "" >> temp_slurm_job.sh
 
 echo "#### Initialise wandb ####" >> temp_slurm_job.sh
 echo "export WANDB_API_KEY=afb11ca4f70d9fc0dfab01f24f1dece4c707cd36" >> temp_slurm_job.sh
+echo "wandb login" >> temp_slurm_job.sh
 
 echo "" >> temp_slurm_job.sh
 
@@ -234,6 +235,6 @@ echo '${cmd_to_run_on_cluster}' >> temp_slurm_job.sh
 # =====================
 #echo
 #echo =================== temp_slurm_job.sh below ======================
-cat temp_slurm_job.sh # debug
+#cat temp_slurm_job.sh # debug
 chmod +x temp_slurm_job.sh
 sbatch temp_slurm_job.sh # submit script to slurm
