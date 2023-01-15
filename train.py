@@ -60,8 +60,8 @@ def parse_args(parser):
                        help='Num of cpus on node. Used to optimise number of dataloader workers during training.')
     train.add_argument('--batch-size', type=int, default=16,
                        help='Batchsize (this is divided by number of GPUs if running Data Distributed Parallel Training)')
-    train.add_argument('--val-batch-size', type=int, default=32,
-                      help='Batchsize for validation (determines how many samples show up in wandb')
+    train.add_argument('--val-num-to-gen', type=int, default=32,
+                      help='Number of samples to generate in validation (determines how many samples show up in wandb')
     train.add_argument('--seed', type=int, default=1337,
                        help='Seed for PyTorch random number generators')
     train.add_argument('--grad-accumulation', type=int, default=1,
@@ -252,7 +252,7 @@ def load_pretrained_fastpitch(args):
     return fastpitch, n_symbols, grapheme_embedding_dim, model_config
 
 def init_wandb(args, add_datestr_to_exp_name=False):
-    wandb.login() # is this needed?
+    # wandb.login() # causes problems when running job on slurm?
     wandb_config = vars(args) # store important information into WANDB config for easier tracking of experiments
     exp_name = args.chkpt_save_dir.split('/')[-1]
 
@@ -871,11 +871,11 @@ def pretraining_prep(args, rank):
     num_cpus = args.num_cpus  # TODO change to CLA? detect from wandb or some automatic way???
     collate_fn = Collate()
     train_loader = DataLoader(train_dataset, num_workers=2 * num_cpus, shuffle=True,
-                              sampler=None, batch_size=args.val_batch_size,
+                              sampler=None, batch_size=args.batch_size,
                               pin_memory=False, drop_last=True,
                               collate_fn=collate_fn)
     val_loader = DataLoader(val_dataset, num_workers=2 * num_cpus, shuffle=False,
-                            sampler=None, batch_size=args.val_batch_size,
+                            sampler=None, batch_size=args.batch_size,
                             pin_memory=False, collate_fn=collate_fn)
 
     # load pretrained hifigan
