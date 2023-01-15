@@ -163,13 +163,13 @@ class TextProcessor(object):
         # add leading and trailing space to text transcript, e.g. to
         # represent silences if not referencing forced alignments
         if self.add_spaces:
-            text = ' ' + text + self.eos_symbol
+            text = ' ' + text
+            if not self.skip_eos:
+                text += self.eos_symbol
+
         # match character-level TextGrids which don't align spaces
         if self.skip_spaces:
             text = [i for i in text if i != ' ']
-        
-        if self.skip_eos:
-            text = [i for i in text if i != self.eos_symbol]
-        
+
         text_encoded = self.text_to_ids(text)
         return text_encoded
