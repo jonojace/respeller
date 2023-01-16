@@ -863,10 +863,12 @@ def pretraining_prep(args, rank):
         wordaligned_speechreps_dir=args.wordaligned_speechreps,
         wordlist=args.train_wordlist,
         max_examples_per_wordtype=args.max_examples_per_wordtype,
+        add_spaces=args.add_spaces,
     )
     val_dataset = RespellerDataset(
         wordaligned_speechreps_dir=args.wordaligned_speechreps,
         wordlist=args.val_wordlist,
+        add_spaces=args.add_spaces,
     )
     num_cpus = args.num_cpus  # TODO change to CLA? detect from wandb or some automatic way???
     collate_fn = Collate()
