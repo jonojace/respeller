@@ -107,6 +107,12 @@ def parse_args(parser):
     arch = parser.add_argument_group('architecture')
     arch.add_argument('--d-model', type=int, default=512,
                       help='Hidden dimension of tranformer')
+    arch.add_argument('--num-layers', type=int, default=4,
+                      help='Number of layers for transformer')
+    arch.add_argument('--nheads', type=int, default=4,
+                      help='Hidden dimension of tranformer')
+    arch.add_argument('--freeze-embedding-table', type=bool, default=True,
+                      help='Whether or not to allow grapheme embedding input table for EncoderRespeller to be updated.')
     arch.add_argument('--latent-temp', type=tuple, default=(2, 0.5, 0.999995),
                       help='Temperature annealling parameters for Gumbel-Softmax (start, end, decay)')
 
@@ -837,8 +843,12 @@ def pretraining_prep(args, rank):
 
     # load models
     tts, n_symbols, grapheme_embedding_dim, model_config = load_pretrained_fastpitch(args)
-    respeller = EncoderRespeller(n_symbols=n_symbols, pretrained_tts=tts, d_model=args.d_model)
-
+    respeller = EncoderRespeller(n_symbols=n_symbols,
+                                 pretrained_tts=tts,
+                                 d_model=args.d_model,
+                                 nhead=args.nheads,
+                                 num_layers=args.num_layers,
+                                 freeze_embedding_table=args.freeze_embedding_table)
     if args.dist_func == 'l1':
         dist_func = mean_absolute_error
     elif args.dist_func == 'l2':
