@@ -56,7 +56,7 @@ def parse_args(parser):
     train = parser.add_argument_group('training setup')
     train.add_argument('--cuda', action='store_true',
                        help='Enable GPU training')
-    train.add_argument('--num-cpus', type=int, default=2,
+    train.add_argument('--num-cpus', type=int, default=1,
                        help='Num of cpus on node. Used to optimise number of dataloader workers during training.')
     train.add_argument('--batch-size', type=int, default=16,
                        help='Batchsize (this is divided by number of GPUs if running Data Distributed Parallel Training)')
