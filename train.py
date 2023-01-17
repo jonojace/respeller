@@ -508,7 +508,7 @@ def get_spectrograms_plots(y, fnames, n=4, label='Predicted spectrogram', mas=Fa
     if label == 'Predicted spectrogram':
         # y: mel_out, dec_mask, dur_pred, log_dur_pred, pitch_pred
         mel_specs = y[0][::s].transpose(1, 2).cpu().numpy()
-        mel_lens = y[1][::s].squeeze().cpu().numpy() - 1
+        mel_lens = y[1][::s].cpu().numpy() - 1
     elif label == 'Reference spectrogram':
         # y: mel_padded, dur_padded, dur_lens, pitch_padded
         mel_specs = y[0][::s].cpu().numpy()
@@ -549,8 +549,8 @@ def generate_audio(y, fnames, vocoder=None, sampling_rate=22050, hop_length=256,
     with torch.no_grad():
         if label == 'Predicted audio':
             # y: mel_out, dec_mask, dur_pred, log_dur_pred, pitch_pred
-            audios = vocoder(y[0][::s].transpose(1, 2)).cpu().squeeze().numpy()
-            mel_lens = y[1][::s].squeeze().cpu().numpy() - 1
+            audios = vocoder(y[0][::s].transpose(1, 2)).cpu().squeeze(1).numpy() # [bsz, dim, samples ]only squeeze away dim (equals 1 for waveform)
+            mel_lens = y[1][::s].cpu().numpy() - 1
         elif label == 'Copy synthesis':
             # y: mel_padded, dur_padded, dur_lens, pitch_padded
             audios = vocoder(y[0][::s]).cpu().squeeze().numpy()
@@ -577,80 +577,82 @@ def generate_audio(y, fnames, vocoder=None, sampling_rate=22050, hop_length=256,
 
     return audios_to_return
 
+class WandbTable:
+    def __init__(self):
+        self.table = wandb.Table(columns=[
+            "names",
+            "orig spelling",
+            "orig spelling spec",
+            "orig spelling audio",
+            "vocoded gt audio",
+            "respelling",
+            "respelling spec",
+            "respelling audio",
+            "sl penalty coef",
+            "softdtw loss",
+        ])
 
-def log_wandb_table(
-        names,
-        vocoded_gt_audios,
-        orig_words,
-        respellings,
-        orig_pred_specs,  # either PIL images or matplotlib figures (but might have mem issues!)
-        orig_pred_audios,
-        pred_specs,  # either PIL images or matplotlib figures (but might have mem issues!)
-        pred_audios,
-        sl_penalty_coefs,
-        losses,
-        sampling_rate=22050,
-        train=False,
-):
-    # define table
-    table = wandb.Table(columns=[
-        "names",
-        "orig spelling",
-        "orig spelling spec",
-        "orig spelling audio",
-        "vocoded gt audio",
-        "respelling",
-        "respelling spec",
-        "respelling audio",
-        "sl penalty coef",
-        "softdtw loss",
-    ])
-    # add rows to table
-    for (
-            name,
-            orig_word,
-            orig_pred_spec_fig,
-            orig_pred_audio,
-            vocoded_gt_audio,
-            respelling,
-            pred_spec_fig,
-            pred_audio,
-            sl_penalty_coef,
-            loss,
-    ) in zip(
-        names,
-        orig_words,
-        orig_pred_specs,
-        orig_pred_audios,
-        vocoded_gt_audios,
-        respellings,
-        pred_specs,
-        pred_audios,
-        sl_penalty_coefs,
-        losses,
+    def add_rows(
+            self,
+            names,
+            vocoded_gt_audios,
+            orig_words,
+            respellings,
+            orig_pred_specs,  # either PIL images or matplotlib figures (but might have mem issues!)
+            orig_pred_audios,
+            pred_specs,  # either PIL images or matplotlib figures (but might have mem issues!)
+            pred_audios,
+            sl_penalty_coefs,
+            losses,
+            sampling_rate=22050,
     ):
-        table.add_data(
-            name,
-            orig_word,
-            wandb.Image(orig_pred_spec_fig, caption=name),
-            wandb.Audio(orig_pred_audio, caption=name, sample_rate=sampling_rate),
-            wandb.Audio(vocoded_gt_audio, caption=name, sample_rate=sampling_rate),
-            respelling,
-            wandb.Image(pred_spec_fig, caption=name),
-            wandb.Audio(pred_audio, caption=name, sample_rate=sampling_rate),
-            sl_penalty_coef,
-            loss,
-        )
+        for (
+                name,
+                orig_word,
+                orig_pred_spec_fig,
+                orig_pred_audio,
+                vocoded_gt_audio,
+                respelling,
+                pred_spec_fig,
+                pred_audio,
+                sl_penalty_coef,
+                loss,
+        ) in zip(
+            names,
+            orig_words,
+            orig_pred_specs,
+            orig_pred_audios,
+            vocoded_gt_audios,
+            respellings,
+            pred_specs,
+            pred_audios,
+            sl_penalty_coefs,
+            losses,
+        ):
+            self.table.add_data(
+                name,
+                orig_word,
+                wandb.Image(orig_pred_spec_fig, caption=name),
+                wandb.Audio(orig_pred_audio, caption=name, sample_rate=sampling_rate),
+                wandb.Audio(vocoded_gt_audio, caption=name, sample_rate=sampling_rate),
+                respelling,
+                wandb.Image(pred_spec_fig, caption=name),
+                wandb.Audio(pred_audio, caption=name, sample_rate=sampling_rate),
+                sl_penalty_coef,
+                loss,
+            )
 
-    if train:
-        wandb.log({"train_table": table})
-    else:
-        wandb.log({"val_table": table})
+            # close figures to save memory
+            if type(orig_pred_spec_fig) == matplotlib.figure.Figure:
+                plt.close(orig_pred_spec_fig)
+            if type(pred_spec_fig) == matplotlib.figure.Figure:
+                plt.close(pred_spec_fig)
 
-    # close figures to save memory
-    if type(orig_pred_specs[0]) == matplotlib.figure.Figure:
-        for fig in orig_pred_specs + pred_specs:
-            plt.close(fig)
+    def log(self, train):
+        if train:
+            wandb.log({"train_table": self.table})
+        else:
+            wandb.log({"val_table": self.table})
 
 def select(x, bsz, n):
     """select items in batch that will be visualised/converted to audio"""
@@ -664,16 +666,17 @@ def validate(
         tts_model,
         vocoder,
         criterion,
-        valset,
+        dataset,
         epoch,
         batch_size,
+        num_to_gen,
         collate_fn,
         sampling_rate,
         hop_length,
         audio_interval=5,
-        n=None,  # how many tokens to plot and generate audio for, if None then do the whole first batch
         only_log_table=False,
         train=False,
+        start_epoch=0
 ):
     """Handles all the validation scoring and printing
     GT (beginning of training):
@@ -685,10 +688,11 @@ def validate(
     """
     was_training = respeller_model.training
     respeller_model.eval()
+    wandb_table = WandbTable()
 
     tik = time.perf_counter()
     with torch.no_grad():
-        val_loader = DataLoader(valset, num_workers=4, shuffle=False,
+        val_loader = DataLoader(dataset, num_workers=4, shuffle=False,
                                 sampler=None,
                                 batch_size=batch_size, pin_memory=False,
                                 collate_fn=collate_fn)
@@ -697,6 +701,8 @@ def validate(
         val_losses_with_sl_penalty = 0.0
         epoch_iter = 0
         sl_penalty_coefs = []
+
+        num_generated = 0
 
         for i, batch in enumerate(val_loader):
             epoch_iter += 1
@@ -712,22 +718,24 @@ def validate(
             val_losses_with_sl_penalty += (coef * iter_loss).mean().item()
 
             # log spectrograms and generated audio for first few utterances
-            log_table = (epoch % audio_interval == 0 if epoch is not None else True)
-            if (i == 0) and log_table:
+            log_table = (epoch % audio_interval == start_epoch if epoch is not None else True)
+            should_generate = num_generated < num_to_gen
+            if log_table and should_generate:
                 fnames = batch['mel_filepaths']
                 bsz = len(fnames)
-                if n is None:
-                    n = bsz
+
+                num_to_generate_this_batch = min(bsz, num_to_gen - num_generated)
 
                 # get original word and respellings for logging
-                original_words = valset.decode_text(x['text_padded'])
-                respellings = valset.decode_text(g_embedding_indices)
+                original_words = dataset.decode_text(x['text_padded'])
+                respellings = dataset.decode_text(g_embedding_indices)
 
                 # vocode original recorded speech
                 gt_mel = y['mel_padded']
                 gt_mel_lens = y['mel_lengths']
-                vocoded_gt = generate_audio((gt_mel, gt_mel_lens), fnames, vocoder, sampling_rate,
-                                            hop_length, n=n, label='Predicted audio', mas=True)
+                vocoded_gt = generate_audio((gt_mel, gt_mel_lens), fnames, vocoder,
+                                            sampling_rate, hop_length, n=num_to_generate_this_batch,
+                                            label='Predicted audio', mas=True)
 
                 # get melspec + generated audio for original spellings
                 orig_pred_mel, orig_dec_lens, _dur_pred, _pitch_pred = tts_model(
@@ -735,36 +743,42 @@ def validate(
                     skip_embeddings=False,
                 )
                 orig_pred_mel = orig_pred_mel.transpose(1, 2)
-                _orig_token_names, orig_pred_specs = get_spectrograms_plots((orig_pred_mel, orig_dec_lens), fnames,
-                                                                            n=n,
-                                                                            label='Predicted spectrogram', mas=True)
-                orig_pred_audios = generate_audio((orig_pred_mel, orig_dec_lens), fnames, vocoder,
-                                                  sampling_rate, hop_length, n=n, label='Predicted audio', mas=True)
+                _orig_token_names, orig_pred_specs = get_spectrograms_plots(
+                    (orig_pred_mel, orig_dec_lens), fnames,
+                    n=num_to_generate_this_batch, label='Predicted spectrogram', mas=True)
+                orig_pred_audios = generate_audio(
+                    (orig_pred_mel, orig_dec_lens), fnames,
+                    vocoder, sampling_rate, hop_length,
+                    n=num_to_generate_this_batch, label='Predicted audio', mas=True)
 
                 # get melspec + generated audio for respellings
-                token_names, pred_specs = get_spectrograms_plots((pred_mel, dec_lens), fnames, n=n,
-                                                                 label='Predicted spectrogram', mas=True)
-                pred_audios = generate_audio((pred_mel, dec_lens), fnames, vocoder, sampling_rate,
-                                             hop_length, n=n, label='Predicted audio', mas=True)
+                token_names, pred_specs = get_spectrograms_plots(
+                    (pred_mel, dec_lens), fnames,
+                    n=num_to_generate_this_batch, label='Predicted spectrogram', mas=True)
+                pred_audios = generate_audio(
+                    (pred_mel, dec_lens), fnames, vocoder, sampling_rate, hop_length,
+                    n=num_to_generate_this_batch, label='Predicted audio', mas=True)
 
                 # log everything to wandb table
-                token_names = [n.split('/')[-1] for n in token_names]
-                log_wandb_table(
+                token_names = [tok_name.split('/')[-1] for tok_name in token_names]
+
+                wandb_table.add_rows(
                     names=token_names,
                     vocoded_gt_audios=vocoded_gt,
-                    orig_words=select(original_words, bsz, n=n),
+                    orig_words=select(original_words, bsz, n=num_to_generate_this_batch),
                     orig_pred_specs=orig_pred_specs,
                     orig_pred_audios=orig_pred_audios,
-                    respellings=select(respellings, bsz, n=n),
+                    respellings=select(respellings, bsz, n=num_to_generate_this_batch),
                     pred_specs=pred_specs,
                     pred_audios=pred_audios,
                     sl_penalty_coefs=coef,
                     losses=iter_loss,
                     sampling_rate=sampling_rate,
-                    train=train,
                 )
 
-            if train or log_table and only_log_table:
+                num_generated += num_to_generate_this_batch
+
+            if log_table and only_log_table and num_generated > num_to_gen:
                 break  #  leave for loop after first iteration
 
         if not only_log_table:
@@ -774,6 +788,9 @@ def validate(
                 val_logs['val/epoch_loss_with_sl_penalty'] = val_losses_with_sl_penalty / epoch_iter
                 val_logs['val/epoch_sl_penalty_coef'] = sum(sl_penalty_coefs) / len(sl_penalty_coefs)
             wandb.log(val_logs)
+
+    if log_table:
+        wandb_table.log(train=train)
 
     if was_training:
         respeller_model.train()
@@ -915,6 +932,7 @@ def run_val(
     tts,
     vocoder,
     criterion,
+    start_epoch,
 ):
     """wrap in fn so that we can call at:
     1. before training model
@@ -925,8 +943,9 @@ def run_val(
         tts_model=tts,
         vocoder=vocoder,
         criterion=criterion,
-        valset=train_dataset,
+        dataset=train_dataset,
         batch_size=args.batch_size,
+        num_to_gen=args.val_num_to_gen,
         collate_fn=collate_fn,
         epoch=epoch,
         sampling_rate=args.sampling_rate,
@@ -934,6 +953,7 @@ def run_val(
         audio_interval=args.val_log_interval,
         only_log_table=True,
         train=True,
+        start_epoch=start_epoch,
     )
 
     # log audio and respellings for val set words
@@ -942,13 +962,15 @@ def run_val(
         tts_model=tts,
         vocoder=vocoder,
         criterion=criterion,
-        valset=val_dataset,
+        dataset=val_dataset,
         batch_size=args.batch_size,
+        num_to_gen=args.val_num_to_gen,
         collate_fn=collate_fn,
         epoch=epoch,
         sampling_rate=args.sampling_rate,
         hop_length=args.hop_length,
         audio_interval=args.val_log_interval,
+        start_epoch=start_epoch,
     )
 
 def train_loop(
@@ -1098,6 +1120,7 @@ def train_loop(
             tts=tts,
             vocoder=vocoder,
             criterion=criterion,
+            start_epoch=1,
         )
 
         respeller_model_config = None # TODO fix this! replace with a model config similar to how fastpitch saves checkpoints in maybe_save_checkpoint!!!
@@ -1122,6 +1145,7 @@ def train(rank, args):
             tts=d['tts'],
             vocoder=d['vocoder'],
             criterion=d['criterion'],
+            start_epoch=1,
         )
 
     train_loop(
