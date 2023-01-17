@@ -811,6 +811,13 @@ def forward_pass(respeller, tts, x):
     }"""
     g_embeddings, g_embedding_indices = respeller(x['text_padded'])
 
+    # use text lens to zero out the output of the respeller so that repelling matches the length of the original spelling
+    text_lens = x['text_lengths']
+    bsz = len(text_lens)
+    for i, text_len in enumerate(text_lens):
+        g_embedding_indices[i, text_len:] = 0.0
+        g_embeddings[i, text_len:, :] = 0.0
+
     # quantiser_outdict = quantiser(logits, produce_targets=True)
     # g_embedding_indices = quantiser_outdict["targets"].squeeze(2)
     # g_embeddings = quantiser_outdict["x"]
