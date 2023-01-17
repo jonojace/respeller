@@ -44,7 +44,8 @@ include_list=""
 #gpu_num=$2
 gpu_num=1
 
-gpu_type="gtx2080ti:"
+#gpu_type="gtx2080ti:"
+gpu_type=""
 
 #if [ $3 = "2080" ]; then
 #    gpu_type="gtx2080ti:"
