@@ -273,7 +273,7 @@ def validate(model, epoch, total_iter, criterion, valset, batch_size, collate_fn
     tik = time.perf_counter()
     with torch.no_grad():
         val_sampler = DistributedSampler(valset) if distributed_run else None
-        val_loader = DataLoader(valset, num_workers=4, shuffle=False,
+        val_loader = DataLoader(valset, num_workers=2, shuffle=False,
                                 sampler=val_sampler,
                                 batch_size=batch_size, pin_memory=False,
                                 collate_fn=collate_fn)
@@ -560,7 +560,7 @@ def train(rank, args):
     else:
         train_sampler, shuffle = None, True
 
-    train_loader = DataLoader(trainset, num_workers=4, shuffle=shuffle,
+    train_loader = DataLoader(trainset, num_workers=2, shuffle=shuffle,
                               sampler=train_sampler, batch_size=args.batch_size,
                               pin_memory=False, drop_last=True,
                               collate_fn=collate_fn)
@@ -571,7 +571,7 @@ def train(rank, args):
 
     # log spectrograms and generated audio for first few validation utterances
     val_sampler = DistributedSampler(valset) if args.distributed_run else None
-    val_loader = DataLoader(valset, num_workers=4, shuffle=False,
+    val_loader = DataLoader(valset, num_workers=2, shuffle=False,
                             sampler=val_sampler, batch_size=args.batch_size,
                             pin_memory=False, collate_fn=collate_fn)
     for i, batch in enumerate(val_loader):
