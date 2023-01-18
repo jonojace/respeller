@@ -29,7 +29,7 @@
 exclude_list=""
 #exclude_list=arnold
 #exclude_list=duflo
-exclude_list=arnold,duflo
+#exclude_list=arnold,duflo
 
 # Only include particular nodes
 include_list=""
@@ -105,7 +105,7 @@ fi
 # =====================
 nodes=1
 gpus=${gpu_type}${gpu_num} #note if gpu_type is empty string then it is just gpu_num, which is fine
-cpus_per_gpu=1
+cpus_per_gpu=2 # NB might need to change to 1 to get jobs onto cluster due to resource constraints
 cpus=$(( cpus_per_gpu*gpu_num ))
 #cpus=1 #might need to use only 1 cpu if node does not have many cores
 tasks=1
