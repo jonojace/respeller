@@ -153,6 +153,8 @@ class TextProcessor(object):
 
     def encode_text(self, text):
         text = self.clean_text(text)
+        # print(f'DEBUG encode_text() {text=}')
+        # print(f'DEBUG encode_text() {self.clean_text(text)=}')
         text = cleaners.collapse_whitespace(text)
         # handle silence phones from forced alignments as single tokens,
         # while splitting other words into character sequences

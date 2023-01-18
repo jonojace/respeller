@@ -100,3 +100,31 @@ def english_cleaners_v2(text):
     # compatibility with basic_english symbol set
     text = re.sub(r'/+', ' ', text)
     return text
+
+def replace_punc_with_whitespace(text):
+    return re.sub(r'[^a-z]+', ' ', text)
+
+def remove_leading_trailing_whitespace(text):
+    return text.lstrip(' ').rstrip(' ')
+
+def remove_possessive_apostrophe(text):
+    # match word ending in 's, group is the word without 's
+    # \1 is the first group matched
+    return re.sub(r"([a-z]+)'s", r'\1s', text)
+
+def lowercase_no_punc(text):
+    text = convert_to_ascii(text)
+    text = expand_datestime(text)
+    text = expand_letters_and_numbers(text)
+    text = expand_numbers(text)
+    text = expand_abbreviations(text)
+    text = lowercase(text)
+    text = remove_possessive_apostrophe(text)
+    text = replace_punc_with_whitespace(text)
+    text = collapse_whitespace(text)
+    text = remove_leading_trailing_whitespace(text)
+
+
+    # compatibility with basic_english symbol set
+    text = re.sub(r'/+', ' ', text)
+    return text

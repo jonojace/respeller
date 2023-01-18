@@ -110,6 +110,10 @@ class TextMelAliLoader(torch.utils.data.Dataset):
         # expect always to load duration and pitch targets from disk
         dur = torch.load(durpath)
         pitch = torch.load(pitchpath)
+
+        # print(f"DEBUG GETITEM {durpath=} {dur.size()=}")
+        assert dur.sum() == 0, f"{dur.sum()=}, should be 0 if --use-mas as we do not need duration targets"
+
         return (text, mel, len_text, dur, pitch, speaker)
 
     def __len__(self):
@@ -136,6 +140,8 @@ class TextMelAliCollate():
             dim=0, descending=True)
         max_input_len = input_lengths[0]
 
+        # print(f"DEBUG DUR {max_input_len=}")
+
         if self.symbol_type == 'pf':
             text_padded = torch.FloatTensor(len(batch), max_input_len, self.n_symbols)
         else:
@@ -158,13 +164,17 @@ class TextMelAliCollate():
             output_lengths[i] = mel.size(1)
 
         if self.mas:
-            dur_padded = torch.zeros(
-                len(batch), max_target_len, max_input_len)
+            dur_padded = torch.zeros(len(batch), max_target_len, max_input_len)
             dur_padded.zero_()
             dur_lens = None
-            for i in range(len(ids_sorted_decreasing)):
-                dur = batch[ids_sorted_decreasing[i]][3]
-                dur_padded[i, :dur.size(0), :dur.size(1)] = dur
+
+            # NB removed this for loop as it seems that dur is all 0's if --use-mas
+            # for i in range(len(ids_sorted_decreasing)):
+            #     dur = batch[ids_sorted_decreasing[i]][3]
+            #     print(f"DEBUG DUR {dur=}")
+            #     print(f"DEBUG DUR {dur_padded.size()=}")
+            #     print(f"DEBUG DUR {dur.size()=}")
+            #     dur_padded[i, :dur.size(0), :dur.size(1)] = dur
         else:
             dur_padded = torch.zeros(
                 len(batch), max_input_len, dtype=batch[0][3].dtype)

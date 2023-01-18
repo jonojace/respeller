@@ -50,6 +50,11 @@ def get_symbols(symbol_set='english_basic', symbol_type=None):
         _letters = 'abcdefghijklmnopqrstuvwxyz'
         _eos = '$'
         symbols = list(_pad + _special + _punctuation + _letters + _eos)
+    elif symbol_set == 'english_pad_lowercase_nopunc':
+        _pad = '_'
+        _punctuation = ' '
+        _letters = 'abcdefghijklmnopqrstuvwxyz'
+        symbols = list(_pad + _punctuation + _letters)
     elif symbol_set == 'english_expanded':
         _pad = '_'
         _punctuation = '!\'",.:;? '
