@@ -36,8 +36,11 @@ class EncoderRespeller(nn.Module):
         self.batch_first = batch_first
         self.weights_to_freeze = ['quantiser.vars'] # weights that we do not update during training
 
-        self.embedding = nn.Embedding(n_symbols, d_embedding) # dim of this should match that of fastpitch symbol embedding table if copying over weights
-        if pretrained_embedding_table is not None:
+        self.embedding = nn.Embedding(n_symbols,
+                                      d_embedding, # dim of this should match that of fastpitch symbol embedding table if copying over weights
+                                      padding_idx=0) # should match pad idx of text processor used to generate inputs to respeller
+
+        if pretrained_embedding_table:
             init_embedding_weights(pretrained_tts.encoder.word_emb.weight, self.embedding.weight)
             if freeze_embedding_table:
                 self.weights_to_freeze.append('embedding.weight')
