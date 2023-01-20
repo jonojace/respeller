@@ -26,7 +26,7 @@
 # =====================
 
 # WARNING WARNING WARNING using an exclude list may fail! debug this with INF support
-exclude_list=""
+exclude_list="arnold"
 #exclude_list=arnold
 #exclude_list=duflo
 #exclude_list=arnold,duflo
@@ -105,13 +105,12 @@ fi
 # =====================
 nodes=1
 gpus=${gpu_type}${gpu_num} #note if gpu_type is empty string then it is just gpu_num, which is fine
-cpus_per_gpu=2 # NB might need to change to 1 to get jobs onto cluster due to resource constraints
+cpus_per_gpu=1 # NB might need to change to 1 to get jobs onto cluster due to resource constraints
 cpus=$(( cpus_per_gpu*gpu_num ))
-#cpus=1 #might need to use only 1 cpu if node does not have many cores
-tasks=1
+ntasks=1
 part=ILCC_GPU,CDT_GPU
 # part=ILCC_GPU,CDT_GPU,M_AND_I_GPU
-time=7-00:00:00
+time=3-00:00:00
 mem=16G
 #mem=16G
 mail_user=s1785140@sms.ed.ac.uk
@@ -129,11 +128,12 @@ echo ""
 #echo "#SBATCH --job-name=${jobname}" >> temp_slurm_job.sh
 echo "#SBATCH --nodes=${nodes}" >> temp_slurm_job.sh
 echo "#SBATCH --gres=gpu:${gpus}" >> temp_slurm_job.sh
-echo "#SBATCH --cpus-per-task=${cpus}" >> temp_slurm_job.sh
+echo "#SBATCH --cpus-per-task=${cpus}" >> temp_slurm_job.sh # means a job needs a dedicated empty cpu? could make getting a node slower
+echo "#SBATCH --ntasks=${ntasks}" >> temp_slurm_job.sh # run on a single cpu
+
 #echo "#SBATCH --mem=${mem}" >> temp_slurm_job.sh  # warning this requests unreserved mem, if not found you will
 # not be able to get a node. if you don't use this flag, you will get a default setting for mem
 # and your jobs will get killed if they exceed it.
-#echo "#SBATCH --ntasks=${tasks}" >> temp_slurm_job.sh
 echo "#SBATCH --time=${time}" >> temp_slurm_job.sh
 echo "#SBATCH --partition=${part}" >> temp_slurm_job.sh
 echo "#SBATCH --mail-user=${mail_user}" >> temp_slurm_job.sh
@@ -169,11 +169,12 @@ echo "" >> temp_slurm_job.sh
 echo "#### Initialise wandb ####" >> temp_slurm_job.sh
 echo "export WANDB_API_KEY=afb11ca4f70d9fc0dfab01f24f1dece4c707cd36" >> temp_slurm_job.sh
 echo "wandb login" >> temp_slurm_job.sh
+echo "wandb online" >> temp_slurm_job.sh
 
 echo "" >> temp_slurm_job.sh
 
 echo "#### create the command to be run on the cluster ####" >> temp_slurm_job.sh
-echo "cmd_to_run_on_cluster=\"${cmd_to_run_on_cluster}\"" >> temp_slurm_job.sh
+echo "cmd_to_run_on_cluster=\"${cmd_to_run_on_cluster} --num-cpus ${cpus}\"" >> temp_slurm_job.sh
 
 echo "" >> temp_slurm_job.sh
 
