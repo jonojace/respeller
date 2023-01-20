@@ -105,7 +105,14 @@ def parse_args(parser):
                      help='Number of steps for lr warmup')
 
     arch = parser.add_argument_group('architecture')
+    arch.add_argument('--dropout-inputs', type=float, default=0.0,
+                      help='Dropout prob to apply to sum of word embeddings '
+                           'and positional encodings')
+    arch.add_argument('--dropout-layers', type=float, default=0.1,
+                      help='Dropout prob to apply to each layer of Tranformer')
     arch.add_argument('--d-model', type=int, default=512,
+                      help='Hidden dimension of tranformer')
+    arch.add_argument('--d-feedforward', type=int, default=512,
                       help='Hidden dimension of tranformer')
     arch.add_argument('--num-layers', type=int, default=4,
                       help='Number of layers for transformer')
@@ -119,6 +126,8 @@ def parse_args(parser):
                       help='Whether or not to allow grapheme embedding input table for EncoderRespeller to be updated.')
     arch.add_argument('--latent-temp', type=tuple, default=(2, 0.5, 0.999995),
                       help='Temperature annealling parameters for Gumbel-Softmax (start, end, decay)')
+    arch.add_argument('--no-src-key-padding-mask', dest='src_key_padding_mask', action='store_false',
+                      help='Whether or not to provide padding attention mask to Transformer Encoder layers')
 
     pretrained_tts = parser.add_argument_group('pretrained tts model')
     # pretrained_tts.add_argument('--fastpitch-with-mas', type=bool, default=True,
@@ -683,10 +692,11 @@ def validate(
         collate_fn,
         sampling_rate,
         hop_length,
+        num_cpus,
         audio_interval=5,
         only_log_table=False,
-        train=False,
-        start_epoch=0
+        is_trainset=False,
+        start_epoch=0,
 ):
     """Handles all the validation scoring and printing
     GT (beginning of training):
@@ -702,7 +712,7 @@ def validate(
 
     tik = time.perf_counter()
     with torch.no_grad():
-        val_loader = DataLoader(dataset, num_workers=4, shuffle=False,
+        val_loader = DataLoader(dataset, num_workers=2*num_cpus, shuffle=False,
                                 sampler=None,
                                 batch_size=batch_size, pin_memory=False,
                                 collate_fn=collate_fn)
@@ -800,11 +810,28 @@ def validate(
             wandb.log(val_logs)
 
     if log_table:
-        wandb_table.log(train=train)
+        wandb_table.log(train=is_trainset)
 
     if was_training:
         respeller_model.train()
 
+def get_src_key_padding_mask(bsz, max_len, lens, device):
+    """return a Boolean mask for a list or tensor of sequence lengths
+    True for values in tensor greater than sequence length
+
+    bsz (int)
+    max_len (int): max seq len of item in batch
+    lens [bsz]: list or tensor of lengths
+    """
+    if type(lens) == list:
+        lens = torch.tensor(lens, device=device)
+    assert lens.dim() == 1
+
+    lens = lens.unsqueeze(1)  # [bsz] -> [bsz, seq_len]
+    m = torch.arange(max_len, device=device)
+    m = m.expand(bsz, max_len)  # repeat along batch dimension
+    m = (m < lens)
+    return ~m  # tilde inverts a bool tensor
 
 def forward_pass(respeller, tts, x):
     """x: inputs
@@ -813,11 +840,14 @@ def forward_pass(respeller, tts, x):
         'text_padded': text_padded,
         'text_lengths': text_lengths,
     }"""
-    g_embeddings, g_embedding_indices = respeller(x['text_padded'])
+    text_lens = x['text_lengths']
+    max_len = max(text_lens).item()
+    bsz = len(text_lens)
+    mask = get_src_key_padding_mask(bsz, max_len, text_lens, x['text_padded'].device)
+
+    g_embeddings, g_embedding_indices = respeller(x['text_padded'], mask)
 
     # use text lens to zero out the output of the respeller so that repelling matches the length of the original spelling
-    text_lens = x['text_lengths']
-    bsz = len(text_lens)
     for i, text_len in enumerate(text_lens):
         g_embedding_indices[i, text_len:] = 0.0
         g_embeddings[i, text_len:, :] = 0.0
@@ -858,10 +888,14 @@ def pretraining_prep(args, rank):
                                  pretrained_tts=tts,
                                  d_embedding=args.embedding_dim,
                                  d_model=args.d_model,
+                                 d_feedforward=args.d_feedforward,
                                  nhead=args.nheads,
                                  num_layers=args.num_layers,
                                  pretrained_embedding_table=args.pretrained_embedding_table,
-                                 freeze_embedding_table=args.freeze_embedding_table)
+                                 freeze_embedding_table=args.freeze_embedding_table,
+                                 src_key_padding_mask=args.src_key_padding_mask,
+                                 dropout_inputs=args.dropout_inputs,
+                                 dropout_layers=args.dropout_layers)
     if args.dist_func == 'l1':
         dist_func = mean_absolute_error
     elif args.dist_func == 'l2':
@@ -973,9 +1007,10 @@ def run_val(
         epoch=epoch,
         sampling_rate=args.sampling_rate,
         hop_length=args.hop_length,
+        num_cpus=args.num_cpus,
         audio_interval=args.val_log_interval,
         only_log_table=True,
-        train=True,
+        is_trainset=True,
         start_epoch=start_epoch,
     )
 
@@ -992,6 +1027,7 @@ def run_val(
         epoch=epoch,
         sampling_rate=args.sampling_rate,
         hop_length=args.hop_length,
+        num_cpus=args.num_cpus,
         audio_interval=args.val_log_interval,
         start_epoch=start_epoch,
     )

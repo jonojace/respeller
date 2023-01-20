@@ -23,6 +23,7 @@ class EncoderRespeller(nn.Module):
             pretrained_tts,
             d_embedding=384,
             d_model=512,
+            d_feedforward=512,
             nhead=4,
             num_layers=4,
             pretrained_embedding_table=True, # optional - initialise from pretrained grapheme embedding table from TTS
@@ -30,11 +31,15 @@ class EncoderRespeller(nn.Module):
             batch_first=True,
             grapheme_embedding_dim=384,
             latent_temp=(2, 0.5, 0.999995),
+            src_key_padding_mask=True,
+            dropout_inputs=0.0,
+            dropout_layers=0.1,
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
         self.batch_first = batch_first
         self.weights_to_freeze = ['quantiser.vars'] # weights that we do not update during training
+        self.src_key_padding_mask = src_key_padding_mask
 
         self.embedding = nn.Embedding(n_symbols,
                                       d_embedding, # dim of this should match that of fastpitch symbol embedding table if copying over weights
@@ -47,10 +52,12 @@ class EncoderRespeller(nn.Module):
 
         self.proj = nn.Linear(d_embedding, d_model)
 
-        self.pos_encoder = PositionalEncoding(d_model)
+        self.pos_encoder = PositionalEncoding(d_model, dropout=dropout_inputs)
         encoder_layer = TransformerEncoderLayer(
             d_model,
             nhead,
+            d_feedforward,
+            dropout=dropout_layers,
             batch_first=batch_first,
         )
         encoder_norm = LayerNorm(d_model)
@@ -83,20 +90,20 @@ class EncoderRespeller(nn.Module):
                 pass
         return trainable_parameters
 
-    def forward(self, inputs):
-        # print(f"1: before embed {inputs.size()=}")
+    def forward(self, inputs, src_key_padding_mask):
         inputs = self.embedding(inputs)
-        # print(f"2: after embed {inputs.size()=}")
+
         if self.batch_first:
             inputs = inputs.transpose(0,1)
         inputs = self.proj(inputs)
         inputs = self.pos_encoder(inputs)
         if self.batch_first:
             inputs = inputs.transpose(0,1)
-        # print(f"3: after pos encoder {inputs.size()=}")
-        logits = self.encoder(inputs)
-        # print(f"4: after ff transformer {logits.size()=}")
-        # logits = self.linear(inputs)
+
+        if not self.src_key_padding_mask:
+            src_key_padding_mask = None
+
+        logits = self.encoder(inputs, src_key_padding_mask=src_key_padding_mask)
 
         quantiser_outdict = self.quantiser(logits, produce_targets=True)
         g_embedding_indices = quantiser_outdict["targets"].squeeze(2)
@@ -120,7 +127,7 @@ class PositionalEncoding(nn.Module):
         >>> pos_encoder = PositionalEncoding(d_model)
     """
 
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
+    def __init__(self, d_model, dropout=0.0, max_len=5000):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
