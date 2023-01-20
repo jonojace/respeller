@@ -124,7 +124,7 @@ def parse_args(parser):
                       help='Whether or not to initialise embedding table from fastpitchs')
     arch.add_argument('--freeze-embedding-table', action='store_true',
                       help='Whether or not to allow grapheme embedding input table for EncoderRespeller to be updated.')
-    arch.add_argument('--latent-temp', type=tuple, default=(2, 0.5, 0.999995),
+    arch.add_argument('--gumbel-temp', nargs=3, type=float, default=(2, 0.5, 0.999995),
                       help='Temperature annealling parameters for Gumbel-Softmax (start, end, decay)')
     arch.add_argument('--no-src-key-padding-mask', dest='src_key_padding_mask', action='store_false',
                       help='Whether or not to provide padding attention mask to Transformer Encoder layers')
@@ -895,7 +895,8 @@ def pretraining_prep(args, rank):
                                  freeze_embedding_table=args.freeze_embedding_table,
                                  src_key_padding_mask=args.src_key_padding_mask,
                                  dropout_inputs=args.dropout_inputs,
-                                 dropout_layers=args.dropout_layers)
+                                 dropout_layers=args.dropout_layers,
+                                 gumbel_temp=args.gumbel_temp)
     if args.dist_func == 'l1':
         dist_func = mean_absolute_error
     elif args.dist_func == 'l2':
@@ -1080,6 +1081,9 @@ def train_loop(
             adjust_learning_rate(total_iter, optimizer, args.learning_rate,
                                  args.warmup_steps)
 
+            # adjust gumbelsoftmax temperature by updating the total number of iterations
+            respeller.quantiser.set_num_updates(total_iter)
+
             optimizer.zero_grad()
 
             x, y = batch_to_gpu(batch)  # x: inputs, y: targets
@@ -1141,6 +1145,8 @@ def train_loop(
 
             if args.speech_length_penalty_training:
                 iter_logs["train/iter_loss_no_sl_penalty"] = loss_no_sl_penalty.mean().item()
+
+            iter_logs["train/iter_gumbel_temp"] = respeller.quantiser.curr_temp
 
             if True:
                 # log memory usage

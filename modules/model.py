@@ -30,7 +30,7 @@ class EncoderRespeller(nn.Module):
             freeze_embedding_table=True,
             batch_first=True,
             grapheme_embedding_dim=384,
-            latent_temp=(2, 0.5, 0.999995),
+            gumbel_temp=(2, 0.5, 0.999995),
             src_key_padding_mask=True,
             dropout_inputs=0.0,
             dropout_layers=0.1,
@@ -71,7 +71,7 @@ class EncoderRespeller(nn.Module):
             in_dim=d_model,
             codebook_size=n_symbols,  # number of codebook entries
             embedding_dim=grapheme_embedding_dim,
-            temp=latent_temp,
+            temp=gumbel_temp,
         )
 
         # load weights from pretrained tts into gumbel softmax
