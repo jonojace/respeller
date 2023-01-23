@@ -26,7 +26,7 @@
 # =====================
 
 # WARNING WARNING WARNING using an exclude list may fail! debug this with INF support
-exclude_list="arnold"
+exclude_list=""
 #exclude_list=arnold
 #exclude_list=duflo
 #exclude_list=arnold,duflo
