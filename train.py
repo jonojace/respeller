@@ -545,16 +545,13 @@ def get_spectrograms_plots(y, fnames, n=4, label='Predicted spectrogram', mas=Fa
     fnames = fnames[::s]
     # print(f"inside get_spectrograms_plots(), {fnames=}")
     if label == 'Predicted spectrogram':
-        # y: mel_out, dec_mask, dur_pred, log_dur_pred, pitch_pred
+        # y: mel_padded, mel_lens
         mel_specs = y[0][::s].transpose(1, 2).cpu().numpy()
         mel_lens = y[1][::s].cpu().numpy() - 1
     elif label == 'Reference spectrogram':
-        # y: mel_padded, dur_padded, dur_lens, pitch_padded
+        # y: mel_padded, mel_lens
         mel_specs = y[0][::s].cpu().numpy()
-        if mas:
-            mel_lens = y[2][::s].cpu().numpy()  # output_lengths
-        else:
-            mel_lens = y[1][::s].cpu().numpy().sum(axis=1) - 1
+        mel_lens = y[1][::s].cpu().numpy()  # output_lengths
 
     image_names = []
     spectrograms = []
@@ -620,20 +617,23 @@ class WandbTable:
     def __init__(self):
         self.table = wandb.Table(columns=[
             "names",
-            "orig spelling",
-            "orig spelling spec",
-            "orig spelling audio",
-            "vocoded gt audio",
-            "respelling",
-            "respelling spec",
-            "respelling audio",
+            "orig spell",
+            "orig spell spec",
+            "orig spell wav",
+            "vocoded gt spec",
+            "vocoded gt wav",
+            "respell",
+            "respell spec",
+            "respell wav",
             "sl penalty coef",
-            "softdtw loss",
+            "loss",
+            "orig loss",
         ])
 
     def add_rows(
             self,
             names,
+            vocoded_gt_specs,
             vocoded_gt_audios,
             orig_words,
             respellings,
@@ -643,6 +643,7 @@ class WandbTable:
             pred_audios,
             sl_penalty_coefs,
             losses,
+            orig_losses,
             sampling_rate=22050,
     ):
         for (
@@ -650,45 +651,53 @@ class WandbTable:
                 orig_word,
                 orig_pred_spec_fig,
                 orig_pred_audio,
+                vocoded_gt_spec_fig,
                 vocoded_gt_audio,
                 respelling,
                 pred_spec_fig,
                 pred_audio,
                 sl_penalty_coef,
                 loss,
+                orig_loss,
         ) in zip(
             names,
             orig_words,
             orig_pred_specs,
             orig_pred_audios,
+            vocoded_gt_specs,
             vocoded_gt_audios,
             respellings,
             pred_specs,
             pred_audios,
             sl_penalty_coefs,
             losses,
+            orig_losses,
         ):
             self.table.add_data(
                 name,
                 orig_word,
                 wandb.Image(orig_pred_spec_fig, caption=name),
                 wandb.Audio(orig_pred_audio, caption=name, sample_rate=sampling_rate),
+                wandb.Image(vocoded_gt_spec_fig, caption=name),
                 wandb.Audio(vocoded_gt_audio, caption=name, sample_rate=sampling_rate),
                 respelling,
                 wandb.Image(pred_spec_fig, caption=name),
                 wandb.Audio(pred_audio, caption=name, sample_rate=sampling_rate),
                 sl_penalty_coef,
                 loss,
+                orig_loss,
             )
 
             # close figures to save memory
             if type(orig_pred_spec_fig) == matplotlib.figure.Figure:
                 plt.close(orig_pred_spec_fig)
+            if type(vocoded_gt_spec_fig) == matplotlib.figure.Figure:
+                plt.close(vocoded_gt_spec_fig)
             if type(pred_spec_fig) == matplotlib.figure.Figure:
                 plt.close(pred_spec_fig)
 
-    def log(self, train):
-        if train:
+    def log(self, is_trainset):
+        if is_trainset:
             wandb.log({"train_table": self.table})
         else:
             wandb.log({"val_table": self.table})
@@ -773,6 +782,9 @@ def validate(
                 # vocode original recorded speech
                 gt_mel = y['mel_padded']
                 gt_mel_lens = y['mel_lengths']
+                _orig_token_names, gt_specs = get_spectrograms_plots(
+                    (gt_mel.transpose(1, 2), gt_mel_lens), fnames,
+                    n=num_to_generate_this_batch, label='Reference spectrogram', mas=False)
                 vocoded_gt = generate_audio((gt_mel, gt_mel_lens), fnames, vocoder,
                                             sampling_rate, hop_length, n=num_to_generate_this_batch,
                                             label='Predicted audio', mas=True)
@@ -782,7 +794,9 @@ def validate(
                     inputs=x['text_padded'],
                     skip_embeddings=False,
                 )
+                # print(f'DEBUG VALIDATE ORIG {orig_pred_mel.size()=} {y["mel_padded"].size()}')
                 orig_pred_mel = orig_pred_mel.transpose(1, 2)
+                orig_iter_loss = (criterion(orig_pred_mel, y["mel_padded"]))
                 _orig_token_names, orig_pred_specs = get_spectrograms_plots(
                     (orig_pred_mel, orig_dec_lens), fnames,
                     n=num_to_generate_this_batch, label='Predicted spectrogram', mas=True)
@@ -804,6 +818,7 @@ def validate(
 
                 wandb_table.add_rows(
                     names=token_names,
+                    vocoded_gt_specs=gt_specs,
                     vocoded_gt_audios=vocoded_gt,
                     orig_words=select(original_words, bsz, n=num_to_generate_this_batch),
                     orig_pred_specs=orig_pred_specs,
@@ -813,6 +828,7 @@ def validate(
                     pred_audios=pred_audios,
                     sl_penalty_coefs=coef,
                     losses=iter_loss,
+                    orig_losses=orig_iter_loss,
                     sampling_rate=sampling_rate,
                 )
 
@@ -830,7 +846,7 @@ def validate(
             wandb.log(val_logs)
 
     if log_table:
-        wandb_table.log(train=is_trainset)
+        wandb_table.log(is_trainset=is_trainset)
 
     if was_training:
         respeller_model.train()
@@ -1074,9 +1090,11 @@ def train_loop(
     optimizer,
     criterion,
 ):
-    print("\n *** Starting training! ***")
+    print(f"\n *** Starting training! (from epoch {start_epoch}) ***")
 
     for epoch in range(start_epoch, args.epochs + 1):
+        print(f"Training loop: epoch {epoch}/{args.epochs + 1}")
+
         # logging metrics
         epoch_start_time = time.perf_counter()
         iter_loss = 0
@@ -1227,6 +1245,7 @@ def train(rank, args):
     d =  pretraining_prep(args, rank)
 
     if not args.skip_before_train_loop_validation and d['start_epoch'] == 1 and d['total_iter'] == 0:
+        print("Starting pre-training loop validation")
         run_val(
             args,
             epoch=d['start_epoch'],
@@ -1239,6 +1258,9 @@ def train(rank, args):
             criterion=d['criterion'],
             start_epoch=1,
         )
+        print("Finished pre-training loop validation")
+    else:
+        print("Skipping pre-training loop validation")
 
     train_loop(
         args,
