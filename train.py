@@ -128,6 +128,11 @@ def parse_args(parser):
                       help='Temperature annealling parameters for Gumbel-Softmax (start, end, decay)')
     arch.add_argument('--no-src-key-padding-mask', dest='src_key_padding_mask', action='store_false',
                       help='Whether or not to provide padding attention mask to Transformer Encoder layers')
+    arch.add_argument('--respelling-len-modifier', type=int, default=0, # 384 is default value for fastpitch embedding table
+                      help='How many letters to remove from or add to original spelling.')
+    arch.add_argument('--use-respelling-len-embeddings', action='store_true', # 384 is default value for fastpitch embedding table
+                      help='Whether or not to incorporate to respeller input additional embeddings that indicate how long'
+                           'the desired respelling should be.')
 
     pretrained_tts = parser.add_argument_group('pretrained tts model')
     # pretrained_tts.add_argument('--fastpitch-with-mas', type=bool, default=True,
@@ -409,11 +414,12 @@ class RespellerDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.token_and_melfilepaths)
 
-class Collate():
+class Collate:
     """ Zero-pads model inputs and targets based on number of frames per setep
     """
 
-    # def __init__(self):
+    def __init__(self, text_len_modifier=0):
+        self.text_len_modifier = text_len_modifier
 
     def __call__(self, batch):
         """Collate's training batch from encoded word token and its
@@ -451,10 +457,21 @@ class Collate():
             mel_padded[i, :mel.size(0), :] = mel
             mel_lengths[i] = mel.size(0)
 
+        def get_desired_text_lens(lens):
+            if self.text_len_modifier < 0:
+                min_len = torch.tensor(1)
+                return torch.max(lens + self.text_len_modifier, min_len)
+            elif self.text_len_modifier > 0:
+                max_len = torch.max(lens)
+                return torch.min(lens + self.text_len_modifier, max_len)
+            else:
+                return lens
+
         return {
             'words': words,
             'text_padded': text_padded,
             'text_lengths': text_lengths,
+            'desired_text_lengths': get_desired_text_lens(text_lengths),
             'mel_padded': mel_padded,
             'mel_lengths': mel_lengths,
             'mel_filepaths': mel_filepaths
@@ -477,18 +494,21 @@ def batch_to_gpu(collated_batch):
     text_lengths = collated_batch['text_lengths']
     mel_padded = collated_batch['mel_padded']
     mel_lengths = collated_batch['mel_lengths']
+    desired_text_lengths = collated_batch['desired_text_lengths']
 
     # no need to put words on gpu, its only used during eval loop
     text_padded = to_gpu(text_padded).long()
     text_lengths = to_gpu(text_lengths).long()
     mel_padded = to_gpu(mel_padded).float()
     mel_lengths = to_gpu(mel_lengths).long()
+    desired_text_lengths = to_gpu(desired_text_lengths).long()
 
     # x: inputs
     x = {
         'words': words,
         'text_padded': text_padded,
         'text_lengths': text_lengths,
+        'desired_text_lengths': desired_text_lengths,
     }
     # y: targets
     y = {
@@ -847,10 +867,17 @@ def forward_pass(respeller, tts, x):
 
     g_embeddings, g_embedding_indices = respeller(x['text_padded'], mask)
 
-    # use text lens to zero out the output of the respeller so that repelling matches the length of the original spelling
-    for i, text_len in enumerate(text_lens):
-        g_embedding_indices[i, text_len:] = 0.0
-        g_embeddings[i, text_len:, :] = 0.0
+    # print(f'DEBUG desiredtextlen1 {g_embedding_indices.size()=} {g_embeddings.size()=} {g_embedding_indices=}')
+    # print(f'DEBUG desiredtextlen2 {max_len=} {x["desired_text_lengths"].size()=} {x["desired_text_lengths"]}')
+    # respellings = dataset.decode_text(g_embedding_indices)
+    # print(f'DEBUG desiredtextlen2 {respellings=}')
+
+    # use text lens to zero out/pad the output of the respeller so that repelling matches the length of the original spelling
+    for i, desired_text_len in enumerate(x['desired_text_lengths']):
+        g_embedding_indices[i, desired_text_len:] = 0
+        g_embeddings[i, desired_text_len:, :] = 0.0
+
+    # print(f'DEBUG desiredtextlen3 AFTER zero padding {g_embedding_indices=}')
 
     # quantiser_outdict = quantiser(logits, produce_targets=True)
     # g_embedding_indices = quantiser_outdict["targets"].squeeze(2)
@@ -946,7 +973,7 @@ def pretraining_prep(args, rank):
         add_spaces=args.add_spaces,
     )
     num_cpus = args.num_cpus  # TODO change to CLA? detect from wandb or some automatic way???
-    collate_fn = Collate()
+    collate_fn = Collate(text_len_modifier=args.respelling_len_modifier)
     train_loader = DataLoader(train_dataset, num_workers=2 * num_cpus, shuffle=True,
                               sampler=None, batch_size=args.batch_size,
                               pin_memory=False, drop_last=True,
