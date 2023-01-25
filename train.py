@@ -733,7 +733,7 @@ def validate(
         audio_interval=5,
         only_log_table=False,
         is_trainset=False,
-        start_epoch=0,
+        # start_epoch=0,
 ):
     """Handles all the validation scoring and printing
     GT (beginning of training):
@@ -775,7 +775,9 @@ def validate(
             val_losses_with_sl_penalty += (coef * iter_loss).mean().item()
 
             # log spectrograms and generated audio for first few utterances
-            log_table = (epoch % audio_interval == start_epoch if epoch is not None else True)
+            log_table = ((epoch-1) % audio_interval == 0 if epoch is not None else True)
+            # print(f"DEBUG audio interval {audio_interval=} {epoch=} {start_epoch=}")
+            # print(f"DEBUG audio interval {((epoch-1) % audio_interval == 0)=}")
             should_generate = num_generated < num_to_gen
             if log_table and should_generate:
                 fnames = batch['mel_filepaths']
