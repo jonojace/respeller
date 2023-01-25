@@ -51,7 +51,7 @@ class EncoderRespeller(nn.Module):
             if freeze_embedding_table:
                 self.weights_to_freeze.append('embedding.weight')
 
-        self.pos_emb = PositionalEmbedding(d_embedding)
+
 
         # if concat_pos_encoding:
         #     self.pos_encoder = PositionalEncoding(pos_encoding_dim, concat_pos_encoding=concat_pos_encoding, dropout=dropout_inputs)
@@ -59,14 +59,17 @@ class EncoderRespeller(nn.Module):
         # else:
         #     self.pos_encoder = PositionalEncoding(d_model, concat_pos_encoding=concat_pos_encoding, dropout=dropout_inputs)
 
-        # self.proj2 = nn.Linear(proj2_indim, d_model)
+
+        self.proj = nn.Linear(d_embedding, d_model)
+
+        self.pos_emb = PositionalEmbedding(d_model)
+
+        proj2_indim = d_model
+        if concat_pos_encoding:
+            proj2_indim += d_model
+        self.proj2 = nn.Linear(proj2_indim, d_model)
 
         self.drop = nn.Dropout(dropout_inputs)
-
-        proj_indim = d_embedding
-        if concat_pos_encoding:
-            proj_indim += d_embedding
-        self.proj = nn.Linear(proj_indim, d_model)
 
         encoder_layer = TransformerEncoderLayer(
             d_model,
@@ -123,36 +126,29 @@ class EncoderRespeller(nn.Module):
         # inputs = self.pos_encoder(inputs)
         # inputs = inputs.transpose(0,1)
 
+        enc_inputs = self.proj(enc_inputs) # d_embedding -> d_model
+
+        # incorporate positional information
+        # NB we do this after the projection down to the dim of the model as this projection
+        # should be learnt in tandem with the positional information
+        # normally embeddings are learnt with the PE but in our usecase we sometimes freeze the embedding table
+        # so we need to allow flexibility in the projection
         inverted_mask = ~src_key_padding_mask
         pos_seq = torch.arange(enc_inputs.size(1), device=enc_inputs.device).to(enc_inputs.dtype)
-
-        # print(f'debug respellerforward() {enc_inputs.size()=} {pos_seq.size()=} {inverted_mask.size()=}')
-
-        # print(f'debug respellerforward() {self.pos_emb(pos_seq, bsz=enc_inputs.size(0)).size()=}')
-
-        dim = enc_inputs.size(2)
-
-        # print(f'debug respellerforward() {inverted_mask.unsqueeze(2).expand(-1,-1,dim).size()=}')
-
-        pos_emb = self.pos_emb(pos_seq, bsz=enc_inputs.size(0)) * inverted_mask.unsqueeze(2).expand(-1,-1,dim)
-
-        # print(f'debug respellerforward() {enc_inputs.size()=} {pos_emb.size()=}')
-
+        featdim = enc_inputs.size(2)
+        # print(f"debug pos emb {self.pos_emb(pos_seq, bsz=enc_inputs.size(0)).size()=}")
+        # print(f"debug pos emb {inverted_mask.unsqueeze(2).expand(-1,-1,featdim).size()=}")
+        pos_emb = self.pos_emb(pos_seq, bsz=enc_inputs.size(0)) * inverted_mask.unsqueeze(2).expand(-1,-1,featdim)
         if self.concat_pos_encoding:
             enc_inputs = torch.cat([
                 enc_inputs,
                 pos_emb,
             ], dim=2)
+            enc_inputs = self.proj2(enc_inputs) # 2*d_model -> d_model
         else:
             enc_inputs = enc_inputs + pos_emb
 
         enc_inputs = self.drop(enc_inputs)
-
-
-
-        # print('debug forward() after pos encoding', f"{enc_inputs.size()}")
-
-        enc_inputs = self.proj(enc_inputs)
 
         if not self.src_key_padding_mask:
             src_key_padding_mask = None
