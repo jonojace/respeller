@@ -550,16 +550,16 @@ def get_spectrograms_plots(y, fnames, n=4, label='Predicted spectrogram', mas=Fa
     bs = len(fnames)
     n = min(n, bs)
     s = bs // n
-    fnames = fnames[::s]
+    # fnames = fnames[::s]
     # print(f"inside get_spectrograms_plots(), {fnames=}")
     if label == 'Predicted spectrogram':
         # y: mel_padded, mel_lens
-        mel_specs = y[0][::s].transpose(1, 2).cpu().numpy()
-        mel_lens = y[1][::s].cpu().numpy() - 1
+        mel_specs = y[0].transpose(1, 2).cpu().numpy()
+        mel_lens = y[1].cpu().numpy() - 1
     elif label == 'Reference spectrogram':
         # y: mel_padded, mel_lens
-        mel_specs = y[0][::s].cpu().numpy()
-        mel_lens = y[1][::s].cpu().numpy()  # output_lengths
+        mel_specs = y[0].cpu().numpy()
+        mel_lens = y[1].cpu().numpy()  # output_lengths
 
     image_names = []
     spectrograms = []
@@ -588,20 +588,20 @@ def generate_audio(y, fnames, vocoder=None, sampling_rate=22050, hop_length=256,
     bs = len(fnames)
     n = min(n, bs)
     s = bs // n
-    fnames = fnames[::s]
+    # fnames = fnames[::s]
     # print(f"inside generate_audio(), {fnames=}")
     with torch.no_grad():
         if label == 'Predicted audio':
             # y: mel_out, dec_mask, dur_pred, log_dur_pred, pitch_pred
-            audios = vocoder(y[0][::s].transpose(1, 2)).cpu().squeeze(1).numpy() # [bsz, dim, samples ]only squeeze away dim (equals 1 for waveform)
-            mel_lens = y[1][::s].cpu().numpy() - 1
+            audios = vocoder(y[0].transpose(1, 2)).cpu().squeeze(1).numpy() # [bsz, dim, samples ]only squeeze away dim (equals 1 for waveform)
+            mel_lens = y[1].cpu().numpy() - 1
         elif label == 'Copy synthesis':
             # y: mel_padded, dur_padded, dur_lens, pitch_padded
-            audios = vocoder(y[0][::s]).cpu().squeeze().numpy()
+            audios = vocoder(y[0]).cpu().squeeze().numpy()
             if mas:
-                mel_lens = y[2][::s].cpu().numpy()  # output_lengths
+                mel_lens = y[2].cpu().numpy()  # output_lengths
             else:
-                mel_lens = y[1][::s].cpu().numpy().sum(axis=1) - 1
+                mel_lens = y[1].cpu().numpy().sum(axis=1) - 1
         elif label == 'Reference audio':
             audios = []
             for fname in fnames:
@@ -609,9 +609,9 @@ def generate_audio(y, fnames, vocoder=None, sampling_rate=22050, hop_length=256,
                 audio, _ = librosa.load(wav, sr=sampling_rate)
                 audios.append(audio)
             if mas:
-                mel_lens = y[2][::s].cpu().numpy()  # output_lengths
+                mel_lens = y[2].cpu().numpy()  # output_lengths
             else:
-                mel_lens = y[1][::s].cpu().numpy().sum(axis=1) - 1
+                mel_lens = y[1].cpu().numpy().sum(axis=1) - 1
     audios_to_return = []
     for audio, mel_len, fname in zip(audios, mel_lens, fnames):
         audio = audio[:mel_len * hop_length]
@@ -828,10 +828,10 @@ def validate(
                     names=token_names,
                     vocoded_gt_specs=gt_specs,
                     vocoded_gt_audios=vocoded_gt,
-                    orig_words=select(original_words, bsz, n=num_to_generate_this_batch),
+                    orig_words=original_words,
                     orig_pred_specs=orig_pred_specs,
                     orig_pred_audios=orig_pred_audios,
-                    respellings=select(respellings, bsz, n=num_to_generate_this_batch),
+                    respellings=respellings,
                     pred_specs=pred_specs,
                     pred_audios=pred_audios,
                     sl_penalty_coefs=coef,
