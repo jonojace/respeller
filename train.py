@@ -137,6 +137,8 @@ def parse_args(parser):
                       help='Whether or not to concatenate pos encodings to inputs or sum')
     arch.add_argument('--pos-encoding-dim', type=int, default=128,
                       help='Dim of positional encoding module')
+    arch.add_argument('--dont-only-predict-alpha', dest='only_predict_alpha', action='store_false',
+                      help='Allow gumbel softmax to predict whitespace, padding, and other punctuation symbols')
 
     pretrained_tts = parser.add_argument_group('pretrained tts model')
     # pretrained_tts.add_argument('--fastpitch-with-mas', type=bool, default=True,
@@ -952,6 +954,7 @@ def pretraining_prep(args, rank):
                                  gumbel_temp=args.gumbel_temp,
                                  concat_pos_encoding=args.concat_pos_encoding,
                                  pos_encoding_dim=args.pos_encoding_dim,
+                                 only_predict_alpha=only_predict_alpha,
                                  )
     if args.dist_func == 'l1':
         dist_func = mean_absolute_error
@@ -1072,7 +1075,6 @@ def run_val(
         audio_interval=args.val_log_interval,
         only_log_table=True,
         is_trainset=True,
-        start_epoch=start_epoch,
     )
 
     # log audio and respellings for val set words
@@ -1090,7 +1092,6 @@ def run_val(
         hop_length=args.hop_length,
         num_cpus=args.num_cpus,
         audio_interval=args.val_log_interval,
-        start_epoch=start_epoch,
     )
 
 def train_loop(

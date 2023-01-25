@@ -35,6 +35,7 @@ class EncoderRespeller(nn.Module):
             dropout_layers=0.1,
             concat_pos_encoding=False,
             pos_encoding_dim=384,
+            only_predict_alpha=True,
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
@@ -90,6 +91,7 @@ class EncoderRespeller(nn.Module):
             codebook_size=n_symbols,  # number of codebook entries
             embedding_dim=grapheme_embedding_dim,
             temp=gumbel_temp,
+            only_predict_alpha=only_predict_alpha,
         )
 
         # load weights from pretrained tts into gumbel softmax

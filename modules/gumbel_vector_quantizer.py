@@ -20,6 +20,7 @@ class GumbelVectorQuantizer(nn.Module):
         activation=nn.GELU(),
         weight_proj_depth=1,
         weight_proj_factor=1,
+        only_predict_alpha=True,
     ):
         """Vector quantization using gumbel softmax
 
@@ -43,6 +44,15 @@ class GumbelVectorQuantizer(nn.Module):
         self.input_dim = in_dim
         self.codebook_size = codebook_size
         self.time_first = time_first
+        self.only_predict_alpha = only_predict_alpha
+
+        if only_predict_alpha:
+            self.symbol2idx = { # should correspond to symbols in fastpitch grapheme embedding table
+                '_': 0, # padding
+                ' ': 1, # whitespace
+            }
+            self.pad_idx = self.symbol2idx['_']
+            self.whitespace_idx = self.symbol2idx[' ']
 
         assert (
             embedding_dim % groups == 0
@@ -179,6 +189,12 @@ class GumbelVectorQuantizer(nn.Module):
         ).sum()
 
         result["temp"] = self.curr_temp
+
+        if self.only_predict_alpha:
+            # set logits for all non alpha symbols to 0, i.e. padding and whitespace
+            # print(f"debug only_predict_alpha {x.size()=}")
+            x[:,self.pad_idx] = 0
+            x[:,self.whitespace_idx] = 0
 
         if self.training:
             x = F.gumbel_softmax(x.float(), tau=self.curr_temp, hard=True).type_as(x)
