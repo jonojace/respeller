@@ -110,7 +110,7 @@ def parse_args(parser):
                            'and positional encodings')
     arch.add_argument('--dropout-layers', type=float, default=0.1,
                       help='Dropout prob to apply to each layer of Tranformer')
-    arch.add_argument('--d-model', type=int, default=512,
+    arch.add_argument('--d-model', type=int, default=128,
                       help='Hidden dimension of tranformer')
     arch.add_argument('--d-feedforward', type=int, default=512,
                       help='Hidden dimension of tranformer')
@@ -133,6 +133,10 @@ def parse_args(parser):
     arch.add_argument('--use-respelling-len-embeddings', action='store_true', # 384 is default value for fastpitch embedding table
                       help='Whether or not to incorporate to respeller input additional embeddings that indicate how long'
                            'the desired respelling should be.')
+    arch.add_argument('--concat-pos-encoding', action='store_true',
+                      help='Whether or not to concatenate pos encodings to inputs or sum')
+    arch.add_argument('--pos-encoding-dim', type=int, default=128,
+                      help='Dim of positional encoding module')
 
     pretrained_tts = parser.add_argument_group('pretrained tts model')
     # pretrained_tts.add_argument('--fastpitch-with-mas', type=bool, default=True,
@@ -178,6 +182,10 @@ def parse_args(parser):
                       help='Path to words that are used to report validation metrics for respeller')
     data.add_argument('--max-examples-per-wordtype', type=int, default=1,
                       help='Path to words that are used to report validation metrics for respeller')
+    data.add_argument('--text-cleaners', type=str, nargs='+',
+                      default=(),
+                      help='What text cleaners to apply to text in order to preproces it before'
+                           'its fed to respeller.')
 
     cond = parser.add_argument_group('conditioning on additional attributes')
     dist = parser.add_argument_group('distributed training setup')
@@ -939,7 +947,10 @@ def pretraining_prep(args, rank):
                                  src_key_padding_mask=args.src_key_padding_mask,
                                  dropout_inputs=args.dropout_inputs,
                                  dropout_layers=args.dropout_layers,
-                                 gumbel_temp=args.gumbel_temp)
+                                 gumbel_temp=args.gumbel_temp,
+                                 concat_pos_encoding=args.concat_pos_encoding,
+                                 pos_encoding_dim=args.pos_encoding_dim,
+                                 )
     if args.dist_func == 'l1':
         dist_func = mean_absolute_error
     elif args.dist_func == 'l2':
@@ -982,11 +993,15 @@ def pretraining_prep(args, rank):
         wordlist=args.train_wordlist,
         max_examples_per_wordtype=args.max_examples_per_wordtype,
         add_spaces=args.add_spaces,
+        symbol_set=args.symbol_set,
+        text_cleaners=args.text_cleaners
     )
     val_dataset = RespellerDataset(
         wordaligned_speechreps_dir=args.wordaligned_speechreps,
         wordlist=args.val_wordlist,
         add_spaces=args.add_spaces,
+        symbol_set=args.symbol_set,
+        text_cleaners=args.text_cleaners
     )
     num_cpus = args.num_cpus  # TODO change to CLA? detect from wandb or some automatic way???
     collate_fn = Collate(text_len_modifier=args.respelling_len_modifier)
@@ -1093,7 +1108,7 @@ def train_loop(
     print(f"\n *** Starting training! (from epoch {start_epoch}) ***")
 
     for epoch in range(start_epoch, args.epochs + 1):
-        print(f"Training loop: epoch {epoch}/{args.epochs + 1}")
+        print(f"Training loop: epoch {epoch}/{args.epochs}")
 
         # logging metrics
         epoch_start_time = time.perf_counter()
