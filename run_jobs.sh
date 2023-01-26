@@ -1,9 +1,9 @@
 cd /home/s1785140/respeller
 
-# Experiment 1/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=2,0.5,0.999995
+# Experiment 1/6: CrossEntropyTraining::lrs=0.1::gumbel_temps=2,2,1.0::seeds=1337
 ./sbatch.sh python train.py \
     --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=2,0.5,0.999995 \
+    --chkpt-save-dir /home/s1785140/respeller/exps/CrossEntropyTraining::lrs=0.1::gumbel_temps=2,2,1.0::seeds=1337 \
     --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
     --input-type char \
     --symbol-set english_pad_lowercase_nopunc \
@@ -21,39 +21,7 @@ cd /home/s1785140/respeller
     --dropout-layers 0.0 \
     --embedding-dim 384 \
     --freeze-embedding-table \
-    --pretrained-embedding-table  \
-    --gumbel-temp 2 0.5 0.999995 \
-    --batch-size 64 \
-    --seed 1337 \
-    --val-num-to-gen 32 \
-    --softdtw-temp 1.0 \
-    --dist-func l1 \
-    --learning-rate 0.1 \
-    --epochs 2000 \
-    --val-log-interval 20 \
-    --epochs-per-checkpoint 20
-
-# Experiment 2/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=2,2,1.0
-./sbatch.sh python train.py \
-    --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=2,2,1.0 \
-    --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
-    --input-type char \
-    --symbol-set english_pad_lowercase_nopunc \
-    --text-cleaners lowercase_no_punc \
-    --use-mas \
-    --cuda \
-    --n-speakers 1 \
-    --use-sepconv  \
-    --respelling-len-modifier 0 \
-    --nheads 2 \
-    --num-layers 1 \
-    --d-model 256 \
-    --d-feedforward 512 \
-    --dropout-inputs 0.0 \
-    --dropout-layers 0.0 \
-    --embedding-dim 384 \
-    --freeze-embedding-table \
+    --cross-entropy-loss \
     --pretrained-embedding-table  \
     --gumbel-temp 2 2 1.0 \
     --batch-size 64 \
@@ -66,10 +34,10 @@ cd /home/s1785140/respeller
     --val-log-interval 20 \
     --epochs-per-checkpoint 20
 
-# Experiment 3/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=5,5,1.0
+# Experiment 2/6: CrossEntropyTraining::lrs=0.1::gumbel_temps=1,1,1.0::seeds=1337
 ./sbatch.sh python train.py \
     --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=5,5,1.0 \
+    --chkpt-save-dir /home/s1785140/respeller/exps/CrossEntropyTraining::lrs=0.1::gumbel_temps=1,1,1.0::seeds=1337 \
     --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
     --input-type char \
     --symbol-set english_pad_lowercase_nopunc \
@@ -87,39 +55,7 @@ cd /home/s1785140/respeller
     --dropout-layers 0.0 \
     --embedding-dim 384 \
     --freeze-embedding-table \
-    --pretrained-embedding-table  \
-    --gumbel-temp 5 5 1.0 \
-    --batch-size 64 \
-    --seed 1337 \
-    --val-num-to-gen 32 \
-    --softdtw-temp 1.0 \
-    --dist-func l1 \
-    --learning-rate 0.1 \
-    --epochs 2000 \
-    --val-log-interval 20 \
-    --epochs-per-checkpoint 20
-
-# Experiment 4/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=1,1,1.0
-./sbatch.sh python train.py \
-    --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=1,1,1.0 \
-    --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
-    --input-type char \
-    --symbol-set english_pad_lowercase_nopunc \
-    --text-cleaners lowercase_no_punc \
-    --use-mas \
-    --cuda \
-    --n-speakers 1 \
-    --use-sepconv  \
-    --respelling-len-modifier 0 \
-    --nheads 2 \
-    --num-layers 1 \
-    --d-model 256 \
-    --d-feedforward 512 \
-    --dropout-inputs 0.0 \
-    --dropout-layers 0.0 \
-    --embedding-dim 384 \
-    --freeze-embedding-table \
+    --cross-entropy-loss \
     --pretrained-embedding-table  \
     --gumbel-temp 1 1 1.0 \
     --batch-size 64 \
@@ -132,10 +68,10 @@ cd /home/s1785140/respeller
     --val-log-interval 20 \
     --epochs-per-checkpoint 20
 
-# Experiment 5/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=10,10,1.0
+# Experiment 3/6: CrossEntropyTraining::lrs=1.0::gumbel_temps=2,2,1.0::seeds=1337
 ./sbatch.sh python train.py \
     --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=10,10,1.0 \
+    --chkpt-save-dir /home/s1785140/respeller/exps/CrossEntropyTraining::lrs=1.0::gumbel_temps=2,2,1.0::seeds=1337 \
     --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
     --input-type char \
     --symbol-set english_pad_lowercase_nopunc \
@@ -153,22 +89,23 @@ cd /home/s1785140/respeller
     --dropout-layers 0.0 \
     --embedding-dim 384 \
     --freeze-embedding-table \
+    --cross-entropy-loss \
     --pretrained-embedding-table  \
-    --gumbel-temp 10 10 1.0 \
+    --gumbel-temp 2 2 1.0 \
     --batch-size 64 \
     --seed 1337 \
     --val-num-to-gen 32 \
     --softdtw-temp 1.0 \
     --dist-func l1 \
-    --learning-rate 0.1 \
+    --learning-rate 1.0 \
     --epochs 2000 \
     --val-log-interval 20 \
     --epochs-per-checkpoint 20
 
-# Experiment 6/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=10,0.1,0.999995
+# Experiment 4/6: CrossEntropyTraining::lrs=1.0::gumbel_temps=1,1,1.0::seeds=1337
 ./sbatch.sh python train.py \
     --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=10,0.1,0.999995 \
+    --chkpt-save-dir /home/s1785140/respeller/exps/CrossEntropyTraining::lrs=1.0::gumbel_temps=1,1,1.0::seeds=1337 \
     --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
     --input-type char \
     --symbol-set english_pad_lowercase_nopunc \
@@ -186,22 +123,23 @@ cd /home/s1785140/respeller
     --dropout-layers 0.0 \
     --embedding-dim 384 \
     --freeze-embedding-table \
+    --cross-entropy-loss \
     --pretrained-embedding-table  \
-    --gumbel-temp 10 0.1 0.999995 \
+    --gumbel-temp 1 1 1.0 \
     --batch-size 64 \
     --seed 1337 \
     --val-num-to-gen 32 \
     --softdtw-temp 1.0 \
     --dist-func l1 \
-    --learning-rate 0.1 \
+    --learning-rate 1.0 \
     --epochs 2000 \
     --val-log-interval 20 \
     --epochs-per-checkpoint 20
 
-# Experiment 7/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=20,20,1.0
+# Experiment 5/6: CrossEntropyTraining::lrs=0.01::gumbel_temps=2,2,1.0::seeds=1337
 ./sbatch.sh python train.py \
     --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=20,20,1.0 \
+    --chkpt-save-dir /home/s1785140/respeller/exps/CrossEntropyTraining::lrs=0.01::gumbel_temps=2,2,1.0::seeds=1337 \
     --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
     --input-type char \
     --symbol-set english_pad_lowercase_nopunc \
@@ -219,22 +157,23 @@ cd /home/s1785140/respeller
     --dropout-layers 0.0 \
     --embedding-dim 384 \
     --freeze-embedding-table \
+    --cross-entropy-loss \
     --pretrained-embedding-table  \
-    --gumbel-temp 20 20 1.0 \
+    --gumbel-temp 2 2 1.0 \
     --batch-size 64 \
     --seed 1337 \
     --val-num-to-gen 32 \
     --softdtw-temp 1.0 \
     --dist-func l1 \
-    --learning-rate 0.1 \
+    --learning-rate 0.01 \
     --epochs 2000 \
     --val-log-interval 20 \
     --epochs-per-checkpoint 20
 
-# Experiment 8/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=0.5,0.5,1.0
+# Experiment 6/6: CrossEntropyTraining::lrs=0.01::gumbel_temps=1,1,1.0::seeds=1337
 ./sbatch.sh python train.py \
     --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=0.5,0.5,1.0 \
+    --chkpt-save-dir /home/s1785140/respeller/exps/CrossEntropyTraining::lrs=0.01::gumbel_temps=1,1,1.0::seeds=1337 \
     --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
     --input-type char \
     --symbol-set english_pad_lowercase_nopunc \
@@ -252,80 +191,15 @@ cd /home/s1785140/respeller
     --dropout-layers 0.0 \
     --embedding-dim 384 \
     --freeze-embedding-table \
+    --cross-entropy-loss \
     --pretrained-embedding-table  \
-    --gumbel-temp 0.5 0.5 1.0 \
+    --gumbel-temp 1 1 1.0 \
     --batch-size 64 \
     --seed 1337 \
     --val-num-to-gen 32 \
     --softdtw-temp 1.0 \
     --dist-func l1 \
-    --learning-rate 0.1 \
-    --epochs 2000 \
-    --val-log-interval 20 \
-    --epochs-per-checkpoint 20
-
-# Experiment 9/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=0.1,0.1,1.0
-./sbatch.sh python train.py \
-    --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=0.1,0.1,1.0 \
-    --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
-    --input-type char \
-    --symbol-set english_pad_lowercase_nopunc \
-    --text-cleaners lowercase_no_punc \
-    --use-mas \
-    --cuda \
-    --n-speakers 1 \
-    --use-sepconv  \
-    --respelling-len-modifier 0 \
-    --nheads 2 \
-    --num-layers 1 \
-    --d-model 256 \
-    --d-feedforward 512 \
-    --dropout-inputs 0.0 \
-    --dropout-layers 0.0 \
-    --embedding-dim 384 \
-    --freeze-embedding-table \
-    --pretrained-embedding-table  \
-    --gumbel-temp 0.1 0.1 1.0 \
-    --batch-size 64 \
-    --seed 1337 \
-    --val-num-to-gen 32 \
-    --softdtw-temp 1.0 \
-    --dist-func l1 \
-    --learning-rate 0.1 \
-    --epochs 2000 \
-    --val-log-interval 20 \
-    --epochs-per-checkpoint 20
-
-# Experiment 10/10: SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=0.01,0.01,1.0
-./sbatch.sh python train.py \
-    --wandb-project-name respeller \
-    --chkpt-save-dir /home/s1785140/respeller/exps/SweepGumbelTempFixedSchedulesAndOnlyPredictAlpha::gumbel_temp=0.01,0.01,1.0 \
-    --fastpitch-chkpt fastpitch/exps/halved_ljspeech_data_nospaces_noeos_pad_lowercase_nopunc/FastPitch_checkpoint_1000.pt \
-    --input-type char \
-    --symbol-set english_pad_lowercase_nopunc \
-    --text-cleaners lowercase_no_punc \
-    --use-mas \
-    --cuda \
-    --n-speakers 1 \
-    --use-sepconv  \
-    --respelling-len-modifier 0 \
-    --nheads 2 \
-    --num-layers 1 \
-    --d-model 256 \
-    --d-feedforward 512 \
-    --dropout-inputs 0.0 \
-    --dropout-layers 0.0 \
-    --embedding-dim 384 \
-    --freeze-embedding-table \
-    --pretrained-embedding-table  \
-    --gumbel-temp 0.01 0.01 1.0 \
-    --batch-size 64 \
-    --seed 1337 \
-    --val-num-to-gen 32 \
-    --softdtw-temp 1.0 \
-    --dist-func l1 \
-    --learning-rate 0.1 \
+    --learning-rate 0.01 \
     --epochs 2000 \
     --val-log-interval 20 \
     --epochs-per-checkpoint 20
