@@ -954,7 +954,7 @@ def pretraining_prep(args, rank):
                                  gumbel_temp=args.gumbel_temp,
                                  concat_pos_encoding=args.concat_pos_encoding,
                                  pos_encoding_dim=args.pos_encoding_dim,
-                                 only_predict_alpha=only_predict_alpha,
+                                 only_predict_alpha=args.only_predict_alpha,
                                  )
     if args.dist_func == 'l1':
         dist_func = mean_absolute_error
