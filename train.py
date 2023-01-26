@@ -91,6 +91,9 @@ def parse_args(parser):
                        help='Bandwidth for pruning paths in alignment matrix when calculating SoftDTW')
     train.add_argument('--dist-func', type=str, default="l1",
                        help='What distance function to use in softdtw loss calculation')
+    train.add_argument('--cross-entropy-loss', action='store_true',
+                       help='Whether to ONLY train the model with cross entropy using grapheme based targets'
+                            'will not use fastpitch TTS acoustic loss')
 
     opt = parser.add_argument_group('optimization setup')
     opt.add_argument('--optimizer', type=str, default='lamb', choices=['adam', 'lamb'],
@@ -735,6 +738,7 @@ def validate(
         audio_interval=5,
         only_log_table=False,
         is_trainset=False,
+        cross_entropy_loss=False,
         # start_epoch=0,
 ):
     """Handles all the validation scoring and printing
@@ -768,8 +772,28 @@ def validate(
 
             # get loss over batch
             x, y = batch_to_gpu(batch)
-            pred_mel, dec_lens, g_embedding_indices = forward_pass(respeller_model, tts_model, x)
-            iter_loss = (criterion(pred_mel, y["mel_padded"]))
+            pred_mel, dec_lens, g_embedding_indices, g_embeddings = forward_pass(respeller_model, tts_model, x)
+
+            if cross_entropy_loss:
+                logits = respeller_model.output_proj(g_embeddings)
+                # print(f"debug cross entr {logits.size()=}")
+                iter_loss = criterion(logits.transpose(1,2), x['text_padded'].long())
+
+
+                # vocabsize = 28
+                # outputs = F.one_hot(g_embedding_indices, num_classes=vocabsize).transpose(1,2)
+                # print(
+                #     f"debug crossentropy {g_embedding_indices=}, {F.one_hot(g_embedding_indices, num_classes=vocabsize).size()=}, "
+                #     f"{outputs.size()=} {x['text_padded'].size()}")
+                # iter_loss = criterion(outputs.float(), x['text_padded'].long())
+                # take mean over batch dimension
+
+                iter_loss = iter_loss.mean(dim=1)
+
+                # print(f"debug cross entropy {iter_loss.size()=}")
+            else:
+                iter_loss = criterion(pred_mel, y["mel_padded"])
+
             val_losses += iter_loss.mean().item()
 
             coef = calc_sl_penalty(dec_lens, y['mel_lengths'])
@@ -808,7 +832,10 @@ def validate(
                 )
                 # print(f'DEBUG VALIDATE ORIG {orig_pred_mel.size()=} {y["mel_padded"].size()}')
                 orig_pred_mel = orig_pred_mel.transpose(1, 2)
-                orig_iter_loss = (criterion(orig_pred_mel, y["mel_padded"]))
+                if cross_entropy_loss:
+                    orig_iter_loss = torch.zeros(bsz).float()
+                else:
+                    orig_iter_loss = (criterion(orig_pred_mel, y["mel_padded"]))
                 _orig_token_names, orig_pred_specs = get_spectrograms_plots(
                     (orig_pred_mel, orig_dec_lens), fnames,
                     n=num_to_generate_this_batch, label='Predicted spectrogram', mas=True)
@@ -927,7 +954,7 @@ def forward_pass(respeller, tts, x):
     # mask.size()
     # dec_mask = mask_from_lens(dec_lens).unsqueeze(2)
 
-    return log_mel, dec_lens, g_embedding_indices
+    return log_mel, dec_lens, g_embedding_indices, g_embeddings
 
 
 def byte_to_gigabyte(bytes):
@@ -955,6 +982,7 @@ def pretraining_prep(args, rank):
                                  concat_pos_encoding=args.concat_pos_encoding,
                                  pos_encoding_dim=args.pos_encoding_dim,
                                  only_predict_alpha=args.only_predict_alpha,
+                                 cross_entropy_loss=args.cross_entropy_loss,
                                  )
     if args.dist_func == 'l1':
         dist_func = mean_absolute_error
@@ -963,8 +991,12 @@ def pretraining_prep(args, rank):
     else:
         dist_func = None  # softdtw package uses L2 as default
 
-    criterion = SoftDTW(use_cuda=True, gamma=args.softdtw_temp, bandwidth=args.softdtw_bandwidth,
-                        dist_func=dist_func)  # input should be size [bsz, seqlen, dim]
+    if args.cross_entropy_loss:
+        padidx = 0
+        criterion = torch.nn.CrossEntropyLoss(ignore_index=padidx, reduction='none')
+    else:
+        criterion = SoftDTW(use_cuda=True, gamma=args.softdtw_temp, bandwidth=args.softdtw_bandwidth,
+                            dist_func=dist_func)  # input should be size [bsz, seqlen, dim]
 
     tts.to(device)
     respeller.to(device)
@@ -1075,6 +1107,7 @@ def run_val(
         audio_interval=args.val_log_interval,
         only_log_table=True,
         is_trainset=True,
+        cross_entropy_loss=args.cross_entropy_loss,
     )
 
     # log audio and respellings for val set words
@@ -1092,6 +1125,7 @@ def run_val(
         hop_length=args.hop_length,
         num_cpus=args.num_cpus,
         audio_interval=args.val_log_interval,
+        cross_entropy_loss=args.cross_entropy_loss,
     )
 
 def train_loop(
@@ -1159,7 +1193,7 @@ def train_loop(
             # }
 
             # forward pass through models (respeller -> quantiser -> tts)
-            pred_mel, dec_lens, _g_embedding_indices = forward_pass(respeller, tts, x)
+            pred_mel, dec_lens, _, g_embeddings = forward_pass(respeller, tts, x)
 
             # TODO: DO WE NEED MASK IF WE USE SOFTDTW LOSS?
             # I THINK IT AUTOMATICALLY WILL ALIGN PADDED FRAMES WITH EACH OTHER???
@@ -1167,7 +1201,18 @@ def train_loop(
             # print(f'inputs to loss {pred_mel.size()}, {gt_mel.size()}')
 
             # calculate loss
-            loss = criterion(pred_mel, gt_mel)
+            if args.cross_entropy_loss:
+                logits = respeller.output_proj(g_embeddings)
+                # print(f"debug cross entr {logits.size()=}")
+                loss = criterion(logits.transpose(1,2), x['text_padded'].long()) # logits should be shape [bsz, numclasses, seqlen]
+                # outputs = F.one_hot(_g_embedding_indices, num_classes=vocabsize).transpose(1,2)
+                # print(f"debug crossentropy {_g_embedding_indices=}, {F.one_hot(_g_embedding_indices, num_classes=vocabsize).size()=}, "
+                #       f"{outputs.size()=} {x['text_padded'].size()}")
+                # loss = criterion(outputs.float(), x['text_padded'].long())
+
+                # print(f"debug cross entropy {loss.size()=}")
+            else:
+                loss = criterion(pred_mel, gt_mel)
             # print('raw loss from softdtw', loss.size())
 
             if args.avg_loss_by_speech_lens:

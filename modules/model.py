@@ -36,12 +36,14 @@ class EncoderRespeller(nn.Module):
             concat_pos_encoding=False,
             pos_encoding_dim=384,
             only_predict_alpha=True,
+            cross_entropy_loss=False,
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
         self.weights_to_freeze = ['quantiser.vars'] # weights that we do not update during training
         self.src_key_padding_mask = src_key_padding_mask
         self.concat_pos_encoding = concat_pos_encoding
+        self.cross_entropy_loss = cross_entropy_loss
 
         self.embedding = nn.Embedding(n_symbols,
                                       d_embedding, # dim of this should match that of fastpitch symbol embedding table if copying over weights
@@ -96,6 +98,10 @@ class EncoderRespeller(nn.Module):
 
         # load weights from pretrained tts into gumbel softmax
         init_embedding_weights(pretrained_tts.encoder.word_emb.weight.unsqueeze(0), self.quantiser.vars)
+
+        if self.cross_entropy_loss:
+            # downsample from d_embedding to vocab size to create logits for softmax over target vocab size
+            self.output_proj = nn.Linear(grapheme_embedding_dim, n_symbols)
 
     def trainable_parameters(self):
         """return the model parameters that we wish to update for respeller training
