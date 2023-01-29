@@ -775,8 +775,19 @@ def validate(
             pred_mel, dec_lens, g_embedding_indices, g_embeddings = forward_pass(respeller_model, tts_model, x)
 
             if cross_entropy_loss:
-                logits = respeller_model.output_proj(g_embeddings)
+                logits = respeller_model.output_projection(g_embeddings)
+
                 # print(f"debug cross entr {logits.size()=}")
+                probabilities = F.softmax(logits, dim=2)
+                # print(f"debug cross entr {probabilities.size()=}")
+                g_embedding_indices = torch.argmax(probabilities, dim=2)
+                # print(f"debug cross entr {g_embedding_indices.size()=}")
+                # print(f"debug cross entr {g_embedding_indices=}")
+                # print(f"debug cross entr {x['desired_text_lengths']=}")
+                for j, desired_text_len in enumerate(x['desired_text_lengths']):
+                    g_embedding_indices[j, desired_text_len:] = 0
+                # print(f"debug cross entr after forcing 0's {g_embedding_indices=}")
+
                 iter_loss = criterion(logits.transpose(1,2), x['text_padded'].long())
 
 
@@ -1202,7 +1213,7 @@ def train_loop(
 
             # calculate loss
             if args.cross_entropy_loss:
-                logits = respeller.output_proj(g_embeddings)
+                logits = respeller.output_projection(g_embeddings)
                 # print(f"debug cross entr {logits.size()=}")
                 loss = criterion(logits.transpose(1,2), x['text_padded'].long()) # logits should be shape [bsz, numclasses, seqlen]
                 # outputs = F.one_hot(_g_embedding_indices, num_classes=vocabsize).transpose(1,2)

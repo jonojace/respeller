@@ -34,9 +34,9 @@ class EncoderRespeller(nn.Module):
             dropout_inputs=0.0,
             dropout_layers=0.1,
             concat_pos_encoding=False,
-            pos_encoding_dim=384,
             only_predict_alpha=True,
             cross_entropy_loss=False,
+            pos_encoding_dim=384,
     ):
         super().__init__()
         self.model_type = 'EncoderRespeller'
@@ -44,6 +44,7 @@ class EncoderRespeller(nn.Module):
         self.src_key_padding_mask = src_key_padding_mask
         self.concat_pos_encoding = concat_pos_encoding
         self.cross_entropy_loss = cross_entropy_loss
+        self.only_predict_alpha = only_predict_alpha
 
         self.embedding = nn.Embedding(n_symbols,
                                       d_embedding, # dim of this should match that of fastpitch symbol embedding table if copying over weights
@@ -103,6 +104,27 @@ class EncoderRespeller(nn.Module):
             # downsample from d_embedding to vocab size to create logits for softmax over target vocab size
             self.output_proj = nn.Linear(grapheme_embedding_dim, n_symbols)
 
+        if self.only_predict_alpha:
+            self.symbol2idx = {  # should correspond to symbols in fastpitch grapheme embedding table
+                '_': 0,  # padding
+                ' ': 1,  # whitespace
+            }
+            self.pad_idx = self.symbol2idx['_']
+            self.whitespace_idx = self.symbol2idx[' ']
+
+    def output_projection(self, x):
+        """when using crossentropyloss"""
+
+        x = self.output_proj(x)
+
+        if self.only_predict_alpha:
+            # set logits for all non alpha symbols to 0, i.e. padding and whitespace
+            x[:,:,self.pad_idx] = 0
+            x[:,:,self.whitespace_idx] = 0
+
+        return x
+
+
     def trainable_parameters(self):
         """return the model parameters that we wish to update for respeller training
         note that we ignore self.vars as we wish it to be initialised and frozen to the grapheme
@@ -161,9 +183,21 @@ class EncoderRespeller(nn.Module):
         if not self.src_key_padding_mask:
             src_key_padding_mask = None
 
-        logits = self.encoder(enc_inputs, src_key_padding_mask=src_key_padding_mask)
+        enc_outs = self.encoder(enc_inputs, src_key_padding_mask=src_key_padding_mask)
 
-        quantiser_outdict = self.quantiser(logits, produce_targets=True)
+        # skip_quantiser = True
+        # if skip_quantiser:
+        #     logits = self.output_projection(enc_outs)
+        #
+        #     probabilities = F.softmax(logits, dim=2)
+        #     indices = torch.argmax(probabilities, dim=2)
+        #     for j, desired_text_len in enumerate(x['desired_text_lengths']):
+        #         indices[j, desired_text_len:] = 0
+        #
+        #     indices =
+        # else:
+
+        quantiser_outdict = self.quantiser(enc_outs, produce_targets=True)
         g_embedding_indices = quantiser_outdict["targets"].squeeze(2)
         g_embeddings = quantiser_outdict["x"]
 
